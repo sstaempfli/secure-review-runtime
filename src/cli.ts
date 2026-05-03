@@ -811,6 +811,12 @@ async function main(): Promise<void> {
     if (configInput) argv.push('--config', configInput);
     const maxCostInput = process.env.INPUT_MAX_COST_USD;
     if (maxCostInput) argv.push('--max-cost-usd', maxCostInput);
+    const runtimeModeInput = process.env.INPUT_RUNTIME_MODE;
+    if (runtimeModeInput) argv.push('--runtime-mode', runtimeModeInput);
+    const targetUrlInput = process.env.INPUT_TARGET_URL;
+    if (targetUrlInput) argv.push('--target-url', targetUrlInput);
+    const timeoutInput = process.env.INPUT_RUNTIME_TIMEOUT_SECONDS;
+    if (timeoutInput) argv.push('--runtime-timeout-seconds', timeoutInput);
   }
 
   await program.parseAsync(argv);
