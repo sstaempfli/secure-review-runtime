@@ -1,0 +1,45 @@
+name: 'Secure Review Runtime'
+description: 'Layer-4 runtime security: attack / attack-ai against a live URL, optional ZAP & Nuclei, authenticated probes via headers or browser-login script.'
+branding:
+  icon: 'shield'
+  color: 'orange'
+inputs:
+  config:
+    description: 'Path to .secure-review.yml'
+    required: false
+    default: '.secure-review.yml'
+  mode:
+    description: 'review is mapped to static-only warning in runner; use attack or attack-ai for runtime probes.'
+    required: false
+    default: 'attack-ai'
+  runtime-mode:
+    description: 'Optional explicit selector — attack | attack-ai | review'
+    required: false
+    default: ''
+  target-url:
+    description: 'Live application base URL (required for attack / attack-ai).'
+    required: false
+    default: ''
+  pentest-scanners:
+    description: 'Optional comma-separated zap-baseline,nuclei'
+    required: false
+    default: ''
+  browser-login-script:
+    description: 'Node script printing JSON headers line for authenticated scans'
+    required: false
+    default: ''
+  auth-headers-json:
+    description: 'JSON object of extra HTTP headers'
+    required: false
+    default: ''
+  runtime-timeout-seconds:
+    description: 'Wall-clock budget for probes and scanners (30–7200)'
+    required: false
+    default: '900'
+  max-cost-usd:
+    description: 'Cost cap for attack-ai (ignored for deterministic attack-only segments)'
+    required: false
+    default: '20'
+runs:
+  using: 'node20'
+  main: 'dist-action/index.js'

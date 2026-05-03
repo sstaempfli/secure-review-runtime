@@ -1,0 +1,45 @@
+{
+  "name": "secure-review-runtime",
+  "version": "1.0.0",
+  "description": "Layer-4 runtime security probes for live targets: deterministic attack, AI-planned attack-ai, ZAP/Nuclei, and optional GitHub PR posting. Depends on secure-review for shared types and utilities.",
+  "type": "module",
+  "bin": {
+    "sr-runtime": "dist/cli.js",
+    "secure-review-runtime": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "action.yml", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsup",
+    "prepare": "[ -d dist ] || tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build:action": "ncc build src/cli.ts -o dist-action --minify --source-map"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.0.2",
+    "commander": "^12.1.0",
+    "secure-review": "file:../secure-review",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@vercel/ncc": "^0.38.3",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example/secure-review-runtime.git"
+  }
+}
