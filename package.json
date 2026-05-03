@@ -38,6 +38,10 @@
     "vitest": "^2.1.5"
   },
   "license": "MIT",
+  "homepage": "https://github.com/sstaempfli/secure-review-runtime#readme",
+  "bugs": {
+    "url": "https://github.com/sstaempfli/secure-review-runtime/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/sstaempfli/secure-review-runtime.git"

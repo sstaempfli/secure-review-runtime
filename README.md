@@ -1,6 +1,8 @@
 # secure-review-runtime
 
-Companion package for **[secure-review](https://github.com/fonCki/secure-review)**. It owns **Layer 4** workflows: deterministic HTTP probes (`attack`), AI-planned same-origin probes (`attack-ai`), optional **OWASP ZAP** / **Nuclei** scanners, browser-login header hooks, and a **`pr-runtime`** GitHub Action entry for posting Markdown runtime findings.
+**This repo:** [sstaempfli/secure-review-runtime](https://github.com/sstaempfli/secure-review-runtime) · **Static core (npm peer):** **[secure-review](https://github.com/fonCki/secure-review)**.
+
+Companion to the core library above; it owns **Layer 4** workflows: deterministic HTTP probes (`attack`), AI-planned same-origin probes (`attack-ai`), optional **OWASP ZAP** / **Nuclei** scanners, browser-login header hooks, and a **`pr-runtime`** GitHub Action entry for posting Markdown runtime findings.
 
 Install alongside the static analyzer:
 
