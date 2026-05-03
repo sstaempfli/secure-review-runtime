@@ -15,7 +15,7 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "action.yml", "README.md", "LICENSE"],
+  "files": ["dist", "dist-action", "action.yml", "README.md", "LICENSE"],
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "tsup",

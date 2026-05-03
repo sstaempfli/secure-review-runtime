@@ -17,6 +17,13 @@ npx secure-review-runtime attack-ai . --target-url http://localhost:3000
 
 Use **`secure-review`** alone for `review`, `fix`, `scan`, and static PR comments; use this package when you need a **reachable base URL** and optional external scanners.
 
+## External scanners (local / CI)
+
+- **`zap-baseline`** runs OWASP ZAP via Docker (`docker` must be available).  
+- **`nuclei`** expects the `nuclei` binary on `PATH` (install from [ProjectDiscovery](https://github.com/projectdiscovery/nuclei)).
+
+The repo ships a prebuilt **`dist-action/`** bundle for the GitHub Action (`action.yml`). After changing `src/cli.ts` or dependencies, run `npm run build:action` and commit the updated `dist-action/` output.
+
 ## Peer dependency
 
 This package depends on **`secure-review` ≥ 1.x** (pinned in `package.json`). Shared types, adapters, config loading, and helpers come from the core library.

@@ -704,9 +704,9 @@ async function main(): Promise<void> {
 
           if (runtimeMode === 'review') {
             log.warn(
-              'Static multi-model PR review is implemented by `secure-review pr` / the core GitHub Action. This runtime action supports attack / attack-ai only.',
+              'Static multi-model PR review is implemented by `secure-review pr` / the core GitHub Action. This runtime action supports attack / attack-ai only. Exiting so CI does not pass silently.',
             );
-            return;
+            process.exit(1);
           }
 
           const targetUrl =
