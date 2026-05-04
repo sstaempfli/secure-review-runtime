@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+
+  build-freshness:
+    # Verifies that the committed dist/ and dist-action/ bundles are in
+    # sync with src/. If a contributor edits source but forgets to rebuild,
+    # this job fails and surfaces the drift via `git diff --exit-code`.
+    # The package ships dist/ as published TypeScript types and dist-action/
+    # as the pre-built single-file bundle that action.yml's `main:` points
+    # at — both must stay fresh.
+    name: Build freshness (dist/ + dist-action/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Rebuild dist/ from src/
+        run: npm run build
+      - name: Verify dist/ is fresh (no uncommitted changes)
+        run: |
+          if ! git diff --quiet -- dist/; then
+            echo "::error::dist/ is stale. Run 'npm run build' locally and commit the result."
+            git --no-pager diff --stat dist/
+            exit 1
+          fi
+      - name: Rebuild dist-action/ from src/
+        run: npm run build:action
+      - name: Verify dist-action/ is fresh (no uncommitted changes)
+        run: |
+          if ! git diff --quiet -- dist-action/; then
+            echo "::error::dist-action/ is stale. Run 'npm run build:action' locally and commit the result."
+            git --no-pager diff --stat dist-action/
+            exit 1
+          fi
