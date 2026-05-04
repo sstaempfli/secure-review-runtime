@@ -1,34 +1,183 @@
 # secure-review-runtime
 
-**This repo:** [sstaempfli/secure-review-runtime](https://github.com/sstaempfli/secure-review-runtime) · **Static core (npm peer):** **[secure-review](https://github.com/fonCki/secure-review)**.
+> Layer-4 runtime security probes for live HTTP services. Deterministic
+> baseline checks, optional LLM-planned same-origin probing, and OWASP
+> ZAP / Nuclei wrappers — usable as a CLI, locally, or as a GitHub
+> Action that comments on every PR.
 
-Companion to the core library above; it owns **Layer 4** workflows: deterministic HTTP probes (`attack`), AI-planned same-origin probes (`attack-ai`), optional **OWASP ZAP** / **Nuclei** scanners, browser-login header hooks, and a **`pr-runtime`** GitHub Action entry for posting Markdown runtime findings.
+**Repo:** [sstaempfli/secure-review-runtime](https://github.com/sstaempfli/secure-review-runtime)
+· **Static peer (npm):** [secure-review](https://github.com/fonCki/secure-review).
 
-Install alongside the static analyzer:
+## What it does (60 seconds)
+
+`secure-review-runtime` complements [`secure-review`](https://github.com/fonCki/secure-review)
+(static analysis + multi-model PR review) with **runtime** checks against
+a live URL:
+
+- **`attack`** — fast, deterministic probes that report missing security
+  headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options), weak
+  cookie attributes, permissive CORS, and exposed sensitive paths. Pure
+  HTTP, no LLM, no extra binaries. **Use this on every PR.**
+- **`attack-ai`** — an LLM crawls a small same-origin sample and plans
+  targeted probes (reflected XSS, IDOR-style URL mutation, etc.) with a
+  capped request budget. Costs cents per run, requires a provider key.
+  **Use this for explicit security passes, not on every PR.**
+- **`pr-runtime`** — wraps either of the above as a GitHub Action that
+  posts a Markdown comment on a PR.
+- **External scanners** — optional pluggable wrappers around OWASP ZAP
+  (`zap-baseline`, requires Docker) and Nuclei (requires the `nuclei`
+  binary).
+
+Use `secure-review` alone for source-only review (`review`, `fix`,
+`scan`, `pr`). Use this package when you have a reachable base URL.
+
+## Install
 
 ```bash
 npm install --save-dev secure-review secure-review-runtime
 ```
 
-CLI (global or `npx`):
+## Quickstart (60 seconds)
+
+A vulnerable demo server ships in this repo so you have something to
+point the scanner at:
 
 ```bash
-npx secure-review-runtime attack . --target-url http://localhost:3000
-npx secure-review-runtime attack-ai . --target-url http://localhost:3000
+# Terminal 1 — start the deliberately-vulnerable demo target
+node examples/vulnerable-target/server.js
+# vulnerable-target listening on http://localhost:3000
+
+# Terminal 2 — run the deterministic attack mode against it
+npx secure-review-runtime attack . \
+    --target-url http://localhost:3000 \
+    --output-dir ./reports
+# → 9+ findings: missing CSP/HSTS/X-Frame-Options, weak Set-Cookie,
+#   permissive CORS, exposed /.env, info-disclosure Server header
 ```
 
-Use **`secure-review`** alone for `review`, `fix`, `scan`, and static PR comments; use this package when you need a **reachable base URL** and optional external scanners.
+The Markdown report and JSON findings land under `./reports/`.
 
-## External scanners (local / CI)
+## Modes — when to use which
 
-- **`zap-baseline`** runs OWASP ZAP via Docker (`docker` must be available).  
-- **`nuclei`** expects the `nuclei` binary on `PATH` (install from [ProjectDiscovery](https://github.com/projectdiscovery/nuclei)).
+| Mode         | Cost          | Speed      | LLM keys?    | When to use                                                                 |
+|--------------|---------------|------------|--------------|-----------------------------------------------------------------------------|
+| `attack`     | $0            | seconds    | No           | Every PR. Catches the OWASP-easy stuff: headers, cookies, CORS, sensitive paths. |
+| `attack-ai`  | ~$0.05–$0.50  | 30–120s    | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. |
+| `pr-runtime` | as above      | as above   | as above     | The GitHub Action wrapper around `attack` / `attack-ai`. Posts a PR comment. |
+| `attack` + `--pentest-scanners zap-baseline,nuclei` | $0 (binaries are local) | 5–15 min | No | Pre-release / nightly. Deeper coverage from external scanners. |
 
-The repo ships a prebuilt **`dist-action/`** bundle for the GitHub Action (`action.yml`). After changing `src/cli.ts` or dependencies, run `npm run build:action` and commit the updated `dist-action/` output.
+## Security model — please read
+
+### `attack-ai` requires explicit opt-in
+
+The Action defaults `mode: attack-ai`. Combined with a stale or
+copy-pasted `dynamic.target_url` in `.secure-review.yml`, that would
+silently fire LLM-planned probes against the wrong host on every PR.
+
+To prevent this, runtime attack modes only run when **at least one**
+of the following is true:
+
+1. CLI flag `--enable-runtime-attacks` is passed
+2. GitHub Action input `enable-runtime-attacks: true` is set
+3. `dynamic.enabled: true` is set in the config
+
+Otherwise the mode logs a warning and exits cleanly without sending any
+requests.
+
+```yaml
+# .secure-review.yml
+dynamic:
+  enabled: true                           # opt-in to runtime probing
+  target_url: http://staging.example.com  # never points at prod or a third-party
+```
+
+```yaml
+# .github/workflows/security.yml
+- uses: sstaempfli/secure-review-runtime@v1
+  with:
+    mode: attack-ai
+    target-url: ${{ secrets.STAGING_URL }}
+    enable-runtime-attacks: true          # explicit per-workflow opt-in
+```
+
+### Browser-login scripts run in a stripped environment
+
+If you use `--browser-login-script` to drive a Playwright/Puppeteer
+login flow that returns authenticated cookies, the script is spawned
+with a **strict env allowlist**, not the full `process.env`. Without
+this, every secret in your shell or CI environment (provider API keys,
+`GITHUB_TOKEN`, `AWS_*`) would leak to a third-party script.
+
+What flows through to the script:
+
+- POSIX basics: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`
+- Locale and timezone: `LANG`, `LC_ALL`, `LC_CTYPE`, `TZ`
+- Temp dirs: `TMPDIR`, `TEMP`, `TMP`
+- Browser knobs: `BROWSER`, `CHROME_PATH`, `CHROME_BIN`, `CHROMIUM_FLAGS`,
+  `DISPLAY`, `XAUTHORITY`, `WAYLAND_DISPLAY`, `XDG_*`
+- Proxy config: `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (both case forms)
+- Custom CA bundle: `NODE_EXTRA_CA_CERTS` (additive — does NOT disable TLS)
+- Prefix-matched: `PLAYWRIGHT_*`, `PUPPETEER_*`, and the explicit
+  user-opt-in `SECURE_REVIEW_FORWARD_*`
+- Safe Node tunables: `NODE_ENV` only (intentionally NOT `NODE_OPTIONS`,
+  `NODE_PATH`, or `NODE_TLS_REJECT_UNAUTHORIZED`)
+
+If your login script genuinely needs an env var that's blocked, prefix
+it with `SECURE_REVIEW_FORWARD_` to opt in:
+
+```bash
+SECURE_REVIEW_FORWARD_MY_TOKEN=xyz npx secure-review-runtime attack . \
+    --target-url ... --browser-login-script ./login.mjs
+```
+
+## CLI
+
+```bash
+# Run all the docs above
+npx secure-review-runtime --help
+npx secure-review-runtime attack --help
+npx secure-review-runtime attack-ai --help
+```
+
+## External scanners — closed environments
+
+`zap-baseline` runs the official OWASP ZAP container via Docker, so the
+host needs:
+
+- `docker` on `PATH` and a running daemon
+- network egress to `ghcr.io` to pull the ZAP image once
+- the target URL reachable from inside the container (use
+  `host.docker.internal` instead of `localhost` on Mac/Windows)
+
+`nuclei` shells out to the `nuclei` binary (install from
+[ProjectDiscovery](https://github.com/projectdiscovery/nuclei)). The
+binary must be on `PATH`. Nuclei templates can be vendored locally for
+fully air-gapped setups.
+
+When neither is available, the wrappers degrade gracefully with a
+`scanner unavailable` finding rather than crashing.
+
+## GitHub Action
+
+The repo ships a prebuilt `dist-action/` bundle that `action.yml` points
+at. After changing `src/` or dependencies, run `npm run build:action`
+and commit the updated bundle — CI verifies freshness on every PR.
 
 ## Peer dependency
 
-This package depends on **`secure-review` ≥ 1.x** (pinned in `package.json`). Shared types, adapters, config loading, and helpers come from the core library.
+Depends on **`secure-review` ≥ 1.x** (pinned in `package.json`). Shared
+types, config loading, env helpers, and gate evaluation come from the
+core library.
+
+## Development
+
+```bash
+npm install
+npm test            # vitest
+npm run typecheck   # tsc --noEmit
+npm run build       # tsup → dist/
+npm run build:action  # ncc → dist-action/ (the GH-Action bundle)
+```
 
 ## License
 
