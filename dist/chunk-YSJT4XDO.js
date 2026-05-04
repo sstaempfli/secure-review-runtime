@@ -1231,6 +1231,67 @@ import { execFileSync } from "child_process";
 import { existsSync } from "fs";
 import { isAbsolute, resolve } from "path";
 var DEFAULT_TIMEOUT_MS = 12e4;
+var ENV_ALLOWLIST_KEYS = /* @__PURE__ */ new Set([
+  // POSIX identity / shell
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  // Locale and timezone
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  // Temp directories
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  // Node tunables (only the safe one — see file-level comment for why
+  // NODE_OPTIONS / NODE_PATH are deliberately excluded).
+  "NODE_ENV",
+  // Browser-automation knobs (non-secret framework config)
+  "BROWSER",
+  "CHROME_PATH",
+  "CHROME_BIN",
+  "CHROMIUM_FLAGS",
+  // Linux GUI for headed browser runs
+  "DISPLAY",
+  "XAUTHORITY",
+  "WAYLAND_DISPLAY",
+  // XDG base-dir spec — Chromium/Snap/Flatpak resolvers consult these for
+  // user-data-dir, cache, etc. Required for headed Linux to spawn cleanly.
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "XDG_RUNTIME_DIR",
+  // Corporate proxy config (uppercase + lowercase forms)
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  // Custom CA bundle for corporate MITM proxies (Zscaler/Netskope/etc.).
+  // ONLY ADDS trusted CAs — does NOT disable TLS verification (unlike
+  // NODE_TLS_REJECT_UNAUTHORIZED, which is intentionally blocked above).
+  "NODE_EXTRA_CA_CERTS"
+]);
+var ENV_ALLOWLIST_PREFIXES = [
+  "PLAYWRIGHT_",
+  "PUPPETEER_",
+  "SECURE_REVIEW_FORWARD_"
+];
+function buildAllowlistedEnv(source = process.env) {
+  const out = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value === void 0) continue;
+    if (ENV_ALLOWLIST_KEYS.has(key) || ENV_ALLOWLIST_PREFIXES.some((p) => key.startsWith(p))) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
 function runBrowserLoginScript(scriptPath, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const abs = isAbsolute(scriptPath) ? scriptPath : resolve(cwd, scriptPath);
   if (!existsSync(abs)) {
@@ -1243,7 +1304,7 @@ function runBrowserLoginScript(scriptPath, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) 
       encoding: "utf8",
       timeout: timeoutMs,
       maxBuffer: 2 * 1024 * 1024,
-      env: process.env
+      env: buildAllowlistedEnv()
     });
     const line = out.trim().split(/\r?\n/).filter(Boolean).at(-1)?.trim();
     if (!line) throw new Error("Browser login script produced no stdout");
@@ -1280,4 +1341,4 @@ export {
   ghActionInput,
   runBrowserLoginScript
 };
-//# sourceMappingURL=chunk-UQ5RXZEN.js.map
+//# sourceMappingURL=chunk-YSJT4XDO.js.map
