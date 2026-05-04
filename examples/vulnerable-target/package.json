@@ -1,0 +1,13 @@
+{
+  "name": "vulnerable-target",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Deliberately vulnerable HTTP server for demonstrating secure-review-runtime probes. DO NOT deploy.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
