@@ -24,6 +24,7 @@ import { runBrowserLoginScript } from './pentest/browser-login.js';
 import { parsePentestScannerList, runCliPentestScanners } from './pentest/cli-scanners.js';
 import { renderAttackReport, renderAttackAiReport } from './reporters/attack-markdown.js';
 import { renderAttackEvidence, renderAttackAiEvidence } from './reporters/attack-json.js';
+import { isRuntimeAttackAllowed, parseBooleanFlag } from './runtime-gate.js';
 
 
 if (existsSync('.env')) {
@@ -477,6 +478,11 @@ async function main(): Promise<void> {
       'wall-clock budget for ZAP/Nuclei only (30–7200; default 900)',
       parseRuntimePrTimeoutSeconds,
     )
+    .option(
+      '--enable-runtime-attacks',
+      'opt in to live runtime probing (overrides config dynamic.enabled=false). Required when dynamic.enabled is not true.',
+      false,
+    )
     .option('--task-id <id>', 'task identifier for evidence JSON', 'unknown')
     .option('--run <n>', 'run number', '1')
     .action(
@@ -497,6 +503,7 @@ async function main(): Promise<void> {
           pentestScanners?: string;
           browserLoginScript?: string;
           pentestTimeoutSeconds?: number;
+          enableRuntimeAttacks: boolean;
           taskId: string;
           run: string;
         },
@@ -504,6 +511,13 @@ async function main(): Promise<void> {
         try {
           const wallStarted = Date.now();
           const { config, configDir } = await loadConfig(opts.config);
+
+          const gate = isRuntimeAttackAllowed(config, opts.enableRuntimeAttacks);
+          if (!gate.allowed) {
+            log.warn(`attack-ai skipped: ${gate.reason}`);
+            return;
+          }
+
           const env = loadEnv();
           const root = resolve(path);
           let authHeaders = mergeAuthHeaders(
@@ -636,6 +650,11 @@ async function main(): Promise<void> {
       'probe + scanner wall time (30–7200s)',
       parseRuntimePrTimeoutSeconds,
     )
+    .option(
+      '--enable-runtime-attacks',
+      'opt in to live runtime probing on every PR (overrides config dynamic.enabled=false). Required for attack / attack-ai modes when dynamic.enabled is not true.',
+      false,
+    )
     .action(
       async (
         opts: {
@@ -647,6 +666,7 @@ async function main(): Promise<void> {
           pentestScanners?: string;
           browserLoginScript?: string;
           runtimeTimeoutSeconds?: number;
+          enableRuntimeAttacks: boolean;
         },
       ) => {
         try {
@@ -707,6 +727,20 @@ async function main(): Promise<void> {
               'Static multi-model PR review is implemented by `secure-review pr` / the core GitHub Action. This runtime action supports attack / attack-ai only. Exiting so CI does not pass silently.',
             );
             process.exit(1);
+          }
+
+          // Opt-in gate: runtime attack modes (attack / attack-ai) must be
+          // explicitly authorized. Without this, a stale dynamic.target_url
+          // in a config the user forgot about would silently fire probes
+          // (deterministic or LLM-planned) at a third-party host on every PR.
+          // Allow either via CLI flag, GH Action input, or config flag.
+          const enableRuntimeAttacks =
+            opts.enableRuntimeAttacks === true ||
+            parseBooleanFlag(ghActionInput('enable-runtime-attacks'));
+          const gate = isRuntimeAttackAllowed(config, enableRuntimeAttacks);
+          if (!gate.allowed) {
+            log.warn(`pr-runtime ${runtimeMode} skipped: ${gate.reason}`);
+            return;
           }
 
           const targetUrl =
@@ -817,6 +851,9 @@ async function main(): Promise<void> {
     if (targetUrlInput) argv.push('--target-url', targetUrlInput);
     const timeoutInput = process.env.INPUT_RUNTIME_TIMEOUT_SECONDS;
     if (timeoutInput) argv.push('--runtime-timeout-seconds', timeoutInput);
+    if (parseBooleanFlag(process.env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
+      argv.push('--enable-runtime-attacks');
+    }
   }
 
   await program.parseAsync(argv);

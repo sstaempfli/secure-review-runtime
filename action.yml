@@ -40,6 +40,10 @@ inputs:
     description: 'Cost cap for attack-ai (ignored for deterministic attack-only segments)'
     required: false
     default: '20'
+  enable-runtime-attacks:
+    description: 'Opt in to live runtime probing on every PR. Without this (or `dynamic.enabled: true` in your config), `attack` / `attack-ai` modes are skipped with a warning. This guards against a stale `dynamic.target_url` silently firing probes at a third-party host.'
+    required: false
+    default: 'false'
 runs:
   using: 'node20'
   main: 'dist-action/index.js'
