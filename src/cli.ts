@@ -864,31 +864,43 @@ async function main(): Promise<void> {
   // When running inside GitHub Actions with no explicit subcommand, default to `pr-runtime`.
   // The action.yml runs this entry with inputs mapped to env vars but no argv
   // subcommand — without this shim the CLI would print --help and exit.
-  const argv = [...process.argv];
-  const inRunner = process.env.GITHUB_ACTIONS === 'true';
+  const argv = buildGhActionArgv(process.argv, process.env);
+
+  await program.parseAsync(argv);
+}
+
+/**
+ * Pure function (no I/O, no side effects) that wraps the argv-shim used
+ * to invoke this CLI from a GitHub Actions job. When `GITHUB_ACTIONS=true`
+ * and no subcommand is present in argv, append `pr-runtime` and translate
+ * each documented `INPUT_*` env var into its corresponding CLI flag.
+ *
+ * Exported so tests can verify the wiring without spawning Node.
+ */
+export function buildGhActionArgv(
+  inputArgv: readonly string[],
+  env: NodeJS.ProcessEnv,
+): string[] {
+  const argv = [...inputArgv];
+  const inRunner = env.GITHUB_ACTIONS === 'true';
   const hasSubcommand = argv.slice(2).some((a) =>
     ['attack', 'attack-ai', 'pr-runtime', 'help'].includes(a),
   );
-  if (inRunner && !hasSubcommand) {
-    const mode = (process.env.INPUT_MODE ?? 'review').toLowerCase();
-    argv.push('pr-runtime');
-    if (mode === 'fix') argv.push('--autofix');
-    const configInput = process.env.INPUT_CONFIG;
-    if (configInput) argv.push('--config', configInput);
-    const maxCostInput = process.env.INPUT_MAX_COST_USD;
-    if (maxCostInput) argv.push('--max-cost-usd', maxCostInput);
-    const runtimeModeInput = process.env.INPUT_RUNTIME_MODE;
-    if (runtimeModeInput) argv.push('--runtime-mode', runtimeModeInput);
-    const targetUrlInput = process.env.INPUT_TARGET_URL;
-    if (targetUrlInput) argv.push('--target-url', targetUrlInput);
-    const timeoutInput = process.env.INPUT_RUNTIME_TIMEOUT_SECONDS;
-    if (timeoutInput) argv.push('--runtime-timeout-seconds', timeoutInput);
-    if (parseBooleanFlag(process.env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
-      argv.push('--enable-runtime-attacks');
-    }
-  }
+  if (!inRunner || hasSubcommand) return argv;
 
-  await program.parseAsync(argv);
+  const mode = (env.INPUT_MODE ?? 'review').toLowerCase();
+  argv.push('pr-runtime');
+  if (mode === 'fix') argv.push('--autofix');
+  if (env.INPUT_CONFIG) argv.push('--config', env.INPUT_CONFIG);
+  if (env.INPUT_MAX_COST_USD) argv.push('--max-cost-usd', env.INPUT_MAX_COST_USD);
+  if (env.INPUT_RUNTIME_MODE) argv.push('--runtime-mode', env.INPUT_RUNTIME_MODE);
+  if (env.INPUT_TARGET_URL) argv.push('--target-url', env.INPUT_TARGET_URL);
+  if (env.INPUT_RUNTIME_TIMEOUT_SECONDS)
+    argv.push('--runtime-timeout-seconds', env.INPUT_RUNTIME_TIMEOUT_SECONDS);
+  if (parseBooleanFlag(env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
+    argv.push('--enable-runtime-attacks');
+  }
+  return argv;
 }
 
 function isDirectExecution(): boolean {
