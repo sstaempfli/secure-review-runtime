@@ -1,6 +1,6 @@
 {
   "name": "secure-review-runtime",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Layer-4 runtime security probes for live targets: deterministic attack, AI-planned attack-ai, ZAP/Nuclei, and optional GitHub PR posting. Depends on secure-review for shared types and utilities.",
   "type": "module",
   "bin": {

@@ -347,6 +347,12 @@ async function runAttackAiMode(input) {
     skill: attacker.skill,
     maxTokens: attacker.maxTokens
   });
+  const maxCostUsd = input.config.gates.max_cost_usd;
+  if (Number.isFinite(maxCostUsd) && maxCostUsd > 0 && planned.usage.costUSD > maxCostUsd) {
+    throw new Error(
+      `Cost cap exceeded: attack-ai planner used $${planned.usage.costUSD.toFixed(4)} but gates.max_cost_usd is $${maxCostUsd.toFixed(4)}. Aborting before probe execution. Raise gates.max_cost_usd in your config or pass --max-cost-usd to allow this run.`
+    );
+  }
   const hypotheses = sanitizeHypotheses(planned.hypotheses, targetUrl).slice(0, remainingProbeSlots(budget));
   log2.info(`Model proposed ${planned.hypotheses.length}; executing ${hypotheses.length} safe same-origin probe${hypotheses.length === 1 ? "" : "s"}`);
   const probes = [];
@@ -738,14 +744,14 @@ function decodeHtml(s) {
   return s.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&#39;", "'");
 }
 var RequestBudget = class {
-  constructor(maxRequests, rateLimitPerSecond) {
-    this.maxRequests = maxRequests;
-    this.rateLimitPerSecond = rateLimitPerSecond;
-  }
-  maxRequests;
-  rateLimitPerSecond;
   used = 0;
   lastRequestAt = 0;
+  maxRequests;
+  rateLimitPerSecond;
+  constructor(maxRequests, rateLimitPerSecond) {
+    this.maxRequests = Number.isFinite(maxRequests) && maxRequests >= 1 ? Math.floor(maxRequests) : 1;
+    this.rateLimitPerSecond = Number.isFinite(rateLimitPerSecond) && rateLimitPerSecond > 0 ? rateLimitPerSecond : 0.1;
+  }
   remaining() {
     return this.maxRequests - this.used;
   }
@@ -763,15 +769,45 @@ var RequestBudget = class {
 // src/reporters/attack-markdown.ts
 import { SEVERITY_ORDER } from "secure-review";
 import { agreementCount } from "secure-review";
+
+// src/internal/markdown-escape.ts
+function escapeInlineCode(s) {
+  if (s === void 0 || s === null) return "";
+  return String(s).replace(/`/g, "\\`").replace(/\r?\n/g, " ");
+}
+function escapeTableCell(s, maxLen = 240) {
+  if (s === void 0 || s === null) return "";
+  return String(s).replace(/\|/g, "\\|").replace(/\r?\n/g, " ").slice(0, maxLen);
+}
+function escapeFencedBlock(s) {
+  if (s === void 0 || s === null) return "";
+  return String(s).replace(/```/g, "\\`\\`\\`").replace(
+    /<\/(details|summary|script|style|iframe)/gi,
+    (_m, tag) => `<\\/${tag}`
+  );
+}
+function escapeBodyText(s) {
+  if (s === void 0 || s === null) return "";
+  return String(s).replace(/```/g, "\\`\\`\\`").replace(
+    /<\/(details|summary|script|style|iframe)/gi,
+    (_m, tag) => `<\\/${tag}`
+  );
+}
+function escapeHeading(s, maxLen = 240) {
+  return escapeBodyText(s).replace(/\r?\n/g, " ").slice(0, maxLen);
+}
+
+// src/reporters/attack-markdown.ts
 function renderAttackReport(output) {
   const parts = [];
   parts.push(`# Secure Review \u2014 Runtime Attack Report`);
   parts.push(`
 Generated: ${(/* @__PURE__ */ new Date()).toISOString()}`);
-  parts.push(`Target: ${output.targetUrl}`);
+  parts.push(`Target: ${escapeBodyText(output.targetUrl)}`);
   parts.push(`Duration: ${(output.totalDurationMs / 1e3).toFixed(1)}s`);
   parts.push(`Gate blocked: ${output.gateBlocked ? "YES" : "no"}`);
-  if (output.gateReasons.length) parts.push(`Reasons: ${output.gateReasons.join("; ")}`);
+  if (output.gateReasons.length)
+    parts.push(`Reasons: ${escapeBodyText(output.gateReasons.join("; "))}`);
   parts.push("");
   parts.push(`## Summary
 `);
@@ -785,7 +821,7 @@ Generated: ${(/* @__PURE__ */ new Date()).toISOString()}`);
   parts.push("|---|---|---:|---|---:|---|");
   for (const c of output.checks) {
     parts.push(
-      `| ${c.check} | \`${c.url}\` | ${c.status ?? ""} | ${c.ok ? "yes" : "no"} | ${(c.durationMs / 1e3).toFixed(1)}s | ${c.error ?? ""} |`
+      `| ${escapeTableCell(c.check)} | \`${escapeInlineCode(c.url)}\` | ${escapeTableCell(c.status ?? "")} | ${c.ok ? "yes" : "no"} | ${(c.durationMs / 1e3).toFixed(1)}s | ${escapeTableCell(c.error ?? "")} |`
     );
   }
   parts.push("");
@@ -804,14 +840,15 @@ function renderAttackAiReport(output) {
   parts.push(`# Secure Review \u2014 AI Attack Simulation Report`);
   parts.push(`
 Generated: ${(/* @__PURE__ */ new Date()).toISOString()}`);
-  parts.push(`Target: ${output.targetUrl}`);
+  parts.push(`Target: ${escapeBodyText(output.targetUrl)}`);
   parts.push(
-    `Attacker: **${output.attacker.provider}** / \`${output.attacker.model}\` \xB7 skill: \`${output.attacker.skillPath}\``
+    `Attacker: **${escapeHeading(output.attacker.provider)}** / \`${escapeInlineCode(output.attacker.model)}\` \xB7 skill: \`${escapeInlineCode(output.attacker.skillPath)}\``
   );
   parts.push(`Duration: ${(output.totalDurationMs / 1e3).toFixed(1)}s`);
   parts.push(`Cost: $${output.totalCostUSD.toFixed(3)}`);
   parts.push(`Gate blocked: ${output.gateBlocked ? "YES" : "no"}`);
-  if (output.gateReasons.length) parts.push(`Reasons: ${output.gateReasons.join("; ")}`);
+  if (output.gateReasons.length)
+    parts.push(`Reasons: ${escapeBodyText(output.gateReasons.join("; "))}`);
   parts.push("");
   parts.push(`## Summary
 `);
@@ -835,7 +872,7 @@ Generated: ${(/* @__PURE__ */ new Date()).toISOString()}`);
   parts.push("|---|---|---|---|---:|---|---|");
   for (const p of output.probes) {
     parts.push(
-      `| ${p.hypothesisId} | ${p.category} | ${p.method} | \`${p.url}\` | ${p.status ?? ""} | ${p.confirmed ? "yes" : "no"} | ${p.error ?? ""} |`
+      `| ${escapeTableCell(p.hypothesisId)} | ${escapeTableCell(p.category)} | ${escapeTableCell(p.method)} | \`${escapeInlineCode(p.url)}\` | ${escapeTableCell(p.status ?? "")} | ${p.confirmed ? "yes" : "no"} | ${escapeTableCell(p.error ?? "")} |`
     );
   }
   parts.push("");
@@ -850,21 +887,21 @@ Generated: ${(/* @__PURE__ */ new Date()).toISOString()}`);
   return parts.join("\n");
 }
 function renderFinding(f) {
-  const reporters = f.reportedBy.join(", ");
-  const tags = [f.cwe, f.owaspCategory].filter(Boolean).join(" \xB7 ");
+  const reporters = f.reportedBy.map(escapeHeading).join(", ");
+  const tags = [f.cwe, f.owaspCategory].filter(Boolean).map(escapeHeading).join(" \xB7 ");
   const count = agreementCount(f);
   const agreementBadge = count > 1 ? ` \xB7 \u2705 confirmed by ${count} models` : "";
-  const stableTag = f.stableId ? ` [${f.stableId}]` : "";
+  const stableTag = f.stableId ? ` [${escapeHeading(f.stableId)}]` : "";
   return `
-### ${f.id}${stableTag} \xB7 **${f.severity}** \xB7 ${f.title}${agreementBadge}
+### ${escapeHeading(f.id)}${stableTag} \xB7 **${escapeHeading(f.severity)}** \xB7 ${escapeHeading(f.title)}${agreementBadge}
 
-- **File:** \`${f.file}:${f.lineStart}-${f.lineEnd}\`
+- **File:** \`${escapeInlineCode(`${f.file}:${f.lineStart}-${f.lineEnd}`)}\`
 - **Tags:** ${tags || "\u2014"}
 - **Reported by:** ${reporters}  (confidence: ${(f.confidence * 100).toFixed(0)}%, agreement: ${count} model${count !== 1 ? "s" : ""})
 
-${f.description}
+${escapeBodyText(f.description)}
 
-${f.remediation ? `**Remediation:** ${f.remediation}` : ""}
+${f.remediation ? `**Remediation:** ${escapeBodyText(f.remediation)}` : ""}
 `;
 }
 function sortByAgreement(findings) {
@@ -962,6 +999,80 @@ import { spawnSync } from "child_process";
 import { mkdtemp, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+
+// src/internal/env-allowlist.ts
+var BASE_ALLOWLIST_KEYS = /* @__PURE__ */ new Set([
+  // POSIX identity and shell
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  // Locale and timezone
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  // Temp directories
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  // Safe Node tunable (NODE_OPTIONS / NODE_PATH / NODE_TLS_REJECT_UNAUTHORIZED
+  // are intentionally NOT here — see file-level comment).
+  "NODE_ENV",
+  // Corporate proxy config (uppercase + lowercase forms)
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  // Additive CA bundle for corporate MITM proxies (NOT a TLS bypass).
+  "NODE_EXTRA_CA_CERTS"
+]);
+var BROWSER_AUTOMATION_KEYS = /* @__PURE__ */ new Set([
+  "BROWSER",
+  "CHROME_PATH",
+  "CHROME_BIN",
+  "CHROMIUM_FLAGS",
+  "DISPLAY",
+  "XAUTHORITY",
+  "WAYLAND_DISPLAY",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "XDG_RUNTIME_DIR"
+]);
+var BROWSER_AUTOMATION_PREFIXES = ["PLAYWRIGHT_", "PUPPETEER_"];
+var SCANNER_KEYS = /* @__PURE__ */ new Set([
+  "DOCKER_HOST",
+  "DOCKER_CONFIG",
+  "DOCKER_CERT_PATH",
+  "DOCKER_TLS_VERIFY",
+  "DOCKER_BUILDKIT"
+]);
+var SCANNER_PREFIXES = ["NUCLEI_"];
+var FORWARD_PREFIX = "SECURE_REVIEW_FORWARD_";
+function filterEnv(source, keys, prefixes) {
+  const out = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value === void 0) continue;
+    if (keys.has(key) || prefixes.some((p) => key.startsWith(p)) || key.startsWith(FORWARD_PREFIX)) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+function buildAllowlistedEnv(source = process.env) {
+  const keys = /* @__PURE__ */ new Set([...BASE_ALLOWLIST_KEYS, ...BROWSER_AUTOMATION_KEYS]);
+  return filterEnv(source, keys, BROWSER_AUTOMATION_PREFIXES);
+}
+function buildScannerEnv(source = process.env) {
+  const keys = /* @__PURE__ */ new Set([...BASE_ALLOWLIST_KEYS, ...SCANNER_KEYS]);
+  return filterEnv(source, keys, SCANNER_PREFIXES);
+}
+
+// src/pentest/external-scanners.ts
 function mapNucleiSeverity(s) {
   const t = typeof s === "string" ? s.toLowerCase() : "";
   if (t === "critical") return "CRITICAL";
@@ -1046,7 +1157,8 @@ async function runNucleiExport(targetUrl, timeoutMs) {
       {
         encoding: "utf8",
         timeout: timeoutMs,
-        maxBuffer: 20 * 1024 * 1024
+        maxBuffer: 20 * 1024 * 1024,
+        env: buildScannerEnv()
       }
     );
     if (r.error?.code === "ENOENT") {
@@ -1070,14 +1182,14 @@ async function runNucleiExport(targetUrl, timeoutMs) {
     let md = `
 ### Nuclei (${findings.length} finding(s))
 
-Exit code ${status}${r.stderr?.trim() ? ` \xB7 stderr excerpt: \`${escapeMd(r.stderr.slice(0, 400))}\`` : ""}
+Exit code ${status}${r.stderr?.trim() ? ` \xB7 stderr excerpt: \`${escapeInlineCode(r.stderr.slice(0, 400))}\`` : ""}
 `;
     md += `
 | Severity | Title | Matched |
 | --- | --- | --- |
 `;
     for (const f of findings.slice(0, 50)) {
-      md += `| ${f.severity} | ${escapeMd(f.title)} | \`${escapeMd(f.file)}\` |
+      md += `| ${f.severity} | ${escapeTableCell(f.title)} | \`${escapeInlineCode(f.file)}\` |
 `;
     }
     if (findings.length > 50) md += `
@@ -1101,7 +1213,7 @@ _\u2026and ${findings.length - 50} more rows._
       markdownSection: `
 ### Nuclei
 
-_Error: ${escapeMd(msg)}_
+_Error: ${escapeTableCell(msg)}_
 `,
       findings: []
     };
@@ -1126,7 +1238,8 @@ async function runZapBaselineDocker(targetUrl, timeoutMs) {
   const r = spawnSync("docker", args, {
     encoding: "utf8",
     timeout: timeoutMs,
-    maxBuffer: 20 * 1024 * 1024
+    maxBuffer: 20 * 1024 * 1024,
+    env: buildScannerEnv()
   });
   if (r.error?.code === "ENOENT") {
     return {
@@ -1153,11 +1266,12 @@ Docker exit ${exitCode ?? "unknown"}
 `;
   md += failuresTable(findings.slice(0, 40));
   const stderrTail = r.stderr?.trim().slice(-1500);
-  if (stderrTail) md += `
+  if (stderrTail)
+    md += `
 <details><summary>ZAP stderr excerpt</summary>
 
 \`\`\`
-${stderrTail}
+${escapeFencedBlock(stderrTail)}
 \`\`\`
 </details>
 `;
@@ -1176,12 +1290,9 @@ function failuresTable(findings) {
 | Severity | Title |
 | --- | --- |
 `;
-  for (const f of findings) t += `| ${f.severity} | ${escapeMd(f.title)} |
+  for (const f of findings) t += `| ${f.severity} | ${escapeTableCell(f.title)} |
 `;
   return t;
-}
-function escapeMd(s) {
-  return s.replace(/\|/g, "\\|").replace(/\n/g, " ").slice(0, 240);
 }
 function parsePentestScannerList(raw) {
   if (!raw?.trim()) return [];
@@ -1228,75 +1339,43 @@ function ghActionInput(name) {
 
 // src/pentest/browser-login.ts
 import { execFileSync } from "child_process";
-import { existsSync } from "fs";
+import { statSync } from "fs";
 import { isAbsolute, resolve } from "path";
 var DEFAULT_TIMEOUT_MS = 12e4;
-var ENV_ALLOWLIST_KEYS = /* @__PURE__ */ new Set([
-  // POSIX identity / shell
-  "PATH",
-  "HOME",
-  "USER",
-  "LOGNAME",
-  "SHELL",
-  // Locale and timezone
-  "LANG",
-  "LC_ALL",
-  "LC_CTYPE",
-  "TZ",
-  // Temp directories
-  "TMPDIR",
-  "TEMP",
-  "TMP",
-  // Node tunables (only the safe one — see file-level comment for why
-  // NODE_OPTIONS / NODE_PATH are deliberately excluded).
-  "NODE_ENV",
-  // Browser-automation knobs (non-secret framework config)
-  "BROWSER",
-  "CHROME_PATH",
-  "CHROME_BIN",
-  "CHROMIUM_FLAGS",
-  // Linux GUI for headed browser runs
-  "DISPLAY",
-  "XAUTHORITY",
-  "WAYLAND_DISPLAY",
-  // XDG base-dir spec — Chromium/Snap/Flatpak resolvers consult these for
-  // user-data-dir, cache, etc. Required for headed Linux to spawn cleanly.
-  "XDG_CONFIG_HOME",
-  "XDG_CACHE_HOME",
-  "XDG_DATA_HOME",
-  "XDG_RUNTIME_DIR",
-  // Corporate proxy config (uppercase + lowercase forms)
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  // Custom CA bundle for corporate MITM proxies (Zscaler/Netskope/etc.).
-  // ONLY ADDS trusted CAs — does NOT disable TLS verification (unlike
-  // NODE_TLS_REJECT_UNAUTHORIZED, which is intentionally blocked above).
-  "NODE_EXTRA_CA_CERTS"
-]);
-var ENV_ALLOWLIST_PREFIXES = [
-  "PLAYWRIGHT_",
-  "PUPPETEER_",
-  "SECURE_REVIEW_FORWARD_"
-];
-function buildAllowlistedEnv(source = process.env) {
-  const out = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (value === void 0) continue;
-    if (ENV_ALLOWLIST_KEYS.has(key) || ENV_ALLOWLIST_PREFIXES.some((p) => key.startsWith(p))) {
-      out[key] = value;
-    }
+function validateScriptPath(rawPath, cwd) {
+  const trimmed = rawPath.trim();
+  if (!trimmed) {
+    throw new Error("Browser login script path is empty (after trim).");
   }
-  return out;
+  const abs = isAbsolute(trimmed) ? trimmed : resolve(cwd, trimmed);
+  let st;
+  try {
+    st = statSync(abs);
+  } catch (err) {
+    const code = err?.code;
+    if (code === "ENOENT") {
+      throw new Error(`Browser login script not found: ${abs}`);
+    }
+    if (code === "EACCES") {
+      throw new Error(`Browser login script is not readable (EACCES): ${abs}`);
+    }
+    if (code === "ELOOP") {
+      throw new Error(`Browser login script symlink loop: ${abs}`);
+    }
+    throw new Error(`Browser login script could not be stat'd (${code ?? "unknown"}): ${abs}`);
+  }
+  if (st.isDirectory()) {
+    throw new Error(`Browser login script path is a directory, not a file: ${abs}`);
+  }
+  if (!st.isFile()) {
+    throw new Error(
+      `Browser login script path is not a regular file (got ${st.isSocket() ? "socket" : st.isFIFO() ? "fifo" : st.isBlockDevice() ? "block device" : st.isCharacterDevice() ? "char device" : "unknown type"}): ${abs}`
+    );
+  }
+  return abs;
 }
 function runBrowserLoginScript(scriptPath, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) {
-  const abs = isAbsolute(scriptPath) ? scriptPath : resolve(cwd, scriptPath);
-  if (!existsSync(abs)) {
-    throw new Error(`Browser login script not found: ${abs}`);
-  }
+  const abs = validateScriptPath(scriptPath, cwd);
   const started = Date.now();
   try {
     const out = execFileSync(process.execPath, [abs], {
@@ -1314,11 +1393,15 @@ function runBrowserLoginScript(scriptPath, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) 
     } catch {
       throw new Error("Browser login script must print JSON on the last stdout line");
     }
-    if (!parsed.headers || typeof parsed.headers !== "object") {
-      throw new Error('Browser login JSON must include a "headers" object');
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error('Browser login JSON must be an object with a "headers" property');
+    }
+    const payload = parsed;
+    if (!payload.headers || typeof payload.headers !== "object" || Array.isArray(payload.headers)) {
+      throw new Error('Browser login JSON "headers" must be a plain object of name \u2192 string-value pairs');
     }
     const headers = {};
-    for (const [k, v] of Object.entries(parsed.headers)) {
+    for (const [k, v] of Object.entries(payload.headers)) {
       if (typeof v === "string" && k.trim()) headers[k] = v;
     }
     return { headers, stderr: "", durationMs: Date.now() - started };
@@ -1341,4 +1424,4 @@ export {
   ghActionInput,
   runBrowserLoginScript
 };
-//# sourceMappingURL=chunk-YSJT4XDO.js.map
+//# sourceMappingURL=chunk-IRJGRGC3.js.map

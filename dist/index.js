@@ -10,7 +10,7 @@ import {
   runAttackMode,
   runBrowserLoginScript,
   runCliPentestScanners
-} from "./chunk-YSJT4XDO.js";
+} from "./chunk-IRJGRGC3.js";
 export {
   ghActionInput,
   mergeAttackerRef,
