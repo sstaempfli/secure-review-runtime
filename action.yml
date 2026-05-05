@@ -9,9 +9,9 @@ inputs:
     required: false
     default: '.secure-review.yml'
   mode:
-    description: 'review is mapped to static-only warning in runner; use attack or attack-ai for runtime probes.'
+    description: 'attack | attack-ai | review. Default is the deterministic `attack` mode (no LLM, no API keys, runs on every PR). Set to `attack-ai` for LLM-planned probing — requires a provider API key in the env. `review` is mapped to a static-only warning in the runner.'
     required: false
-    default: 'attack-ai'
+    default: 'attack'
   runtime-mode:
     description: 'Optional explicit selector — attack | attack-ai | review'
     required: false

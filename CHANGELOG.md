@@ -9,6 +9,14 @@ versioning follows [SemVer](https://semver.org/).
 In progress on `feat/v1.1.1-polish`. Polish + bug-fix round following the
 post-merge validation pass on v1.1.0.
 
+### Changed (breaking)
+- **`action.yml` default `mode` flipped from `attack-ai` → `attack`.**
+  `attack-ai` requires a provider API key and incurs a per-run cost; it
+  is no longer the default for the GitHub Action. Workflows that
+  relied on the previous default and want LLM-planned probing must
+  now set `mode: attack-ai` explicitly. Aligns with the README's
+  "use `attack` on every PR" guidance.
+
 ### Fixed
 - **README install command was broken** — claimed
   `npm install secure-review-runtime` but the package is GitHub-only by
