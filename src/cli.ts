@@ -25,6 +25,7 @@ import { parsePentestScannerList, runCliPentestScanners } from './pentest/cli-sc
 import { renderAttackReport, renderAttackAiReport } from './reporters/attack-markdown.js';
 import { renderAttackEvidence, renderAttackAiEvidence } from './reporters/attack-json.js';
 import { isRuntimeAttackAllowed, parseBooleanFlag } from './runtime-gate.js';
+import { assertRuntimeConfigShape } from './internal/schema-guard.js';
 
 
 if (existsSync('.env')) {
@@ -374,6 +375,7 @@ async function main(): Promise<void> {
         try {
           const wallStarted = Date.now();
           const { config } = await loadConfig(opts.config);
+          assertRuntimeConfigShape(config);
           const rootResolved = resolve(path);
           let authHeaders = mergeAuthHeaders(
             config.dynamic.auth_headers,
@@ -539,6 +541,7 @@ async function main(): Promise<void> {
         try {
           const wallStarted = Date.now();
           const { config, configDir } = await loadConfig(opts.config);
+          assertRuntimeConfigShape(config);
 
           const gate = isRuntimeAttackAllowed(config, opts.enableRuntimeAttacks);
           if (!gate.allowed) {
@@ -699,6 +702,7 @@ async function main(): Promise<void> {
       ) => {
         try {
           const { config, configDir } = await loadConfig(opts.config);
+          assertRuntimeConfigShape(config);
           const env = loadEnv();
           applyMaxCostOverride(config, opts.maxCostUsd);
 
