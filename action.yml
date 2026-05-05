@@ -1,5 +1,5 @@
 name: 'Secure Review Runtime'
-description: 'Layer-4 runtime security: attack / attack-ai against a live URL, optional ZAP & Nuclei, authenticated probes via headers or browser-login script.'
+description: 'Runtime HTTP security probes: attack / attack-ai against a live URL, optional ZAP & Nuclei, authenticated probes via headers or browser-login script.'
 branding:
   icon: 'shield'
   color: 'orange'

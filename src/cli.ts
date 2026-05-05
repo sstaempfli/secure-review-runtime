@@ -137,7 +137,7 @@ export function parseAttackProvider(raw: string) {
   return parsed.data;
 }
 
-/** Parse `Name: value` headers for authenticated Layer 4 probes (repeatable CLI `-H`). */
+/** Parse `Name: value` headers for authenticated runtime HTTP probes (repeatable CLI `-H`). */
 export function parseAuthHeaderLine(raw: string): { name: string; value: string } {
   const trimmed = raw.trim();
   const idx = trimmed.indexOf(':');
@@ -316,7 +316,7 @@ async function main(): Promise<void> {
   const program = new Command();
   program
     .name('secure-review-runtime')
-    .description('Runtime Layer-4 probes: attack, attack-ai, pr-runtime (live targets + optional scanners)')
+    .description('Runtime HTTP probes: attack, attack-ai, pr-runtime (live targets + optional scanners)')
     .version(version)
     .option('-q, --quiet', 'suppress info output', false)
     .option('-v, --verbose', 'enable debug output', false)
@@ -327,7 +327,7 @@ async function main(): Promise<void> {
     });
   program
     .command('attack')
-    .description('Run Layer 4 deterministic runtime probes against a live target URL.')
+    .description('Run deterministic HTTP probes (security headers, cookies, CORS, sensitive paths) against a live target URL.')
     .argument('[path]', 'project root for config resolution', '.')
     .option('-c, --config <file>', 'config file', '.secure-review.yml')
     .option('-o, --output-dir <dir>', 'output directory', './reports')
@@ -840,7 +840,7 @@ async function main(): Promise<void> {
             aggregateFindings.push(...pentest.findings);
           }
 
-          body += `\n<sub>secure-review-runtime · Layer 4 + optional external scanners</sub>`;
+          body += `\n<sub>secure-review-runtime · runtime HTTP + optional external scanners</sub>`;
 
           await postPrMarkdownReview({
             ...prPostBase,

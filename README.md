@@ -1,6 +1,6 @@
 # secure-review-runtime
 
-> Layer-4 runtime security probes for live HTTP services. Deterministic
+> Runtime HTTP security probes for live services. Deterministic
 > baseline checks, optional LLM-planned same-origin probing, and OWASP
 > ZAP / Nuclei wrappers — usable as a CLI, locally, or as a GitHub
 > Action that comments on every PR.
