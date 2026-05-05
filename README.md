@@ -33,9 +33,23 @@ Use `secure-review` alone for source-only review (`review`, `fix`,
 
 ## Install
 
+`secure-review-runtime` is **GitHub-only by design** — it isn't published
+on the npm registry. The static peer (`secure-review`) IS on npm.
+
 ```bash
-npm install --save-dev secure-review secure-review-runtime
+# Static peer (npm)
+npm install --save-dev secure-review
+
+# This package (GitHub — pin to a tag)
+npm install --save-dev github:sstaempfli/secure-review-runtime#v1.1.1
 ```
+
+Why GitHub-only? The runtime path probes live targets and we'd rather
+ask users to pin a specific tag than risk a broad npm rollout while the
+threat model is still evolving. The static peer is stable and ships
+through the registry as usual. As a GitHub-installed package, the
+`prepare` script auto-builds `dist/` on first install — Node 20+ is
+required.
 
 ## Quickstart (60 seconds)
 

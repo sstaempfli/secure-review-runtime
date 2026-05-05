@@ -4,7 +4,19 @@ All notable changes to `secure-review-runtime` are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased] — 1.1.0 (proposed)
+## [Unreleased] — 1.1.1
+
+In progress on `feat/v1.1.1-polish`. Polish + bug-fix round following the
+post-merge validation pass on v1.1.0.
+
+### Fixed
+- **README install command was broken** — claimed
+  `npm install secure-review-runtime` but the package is GitHub-only by
+  design. Split into two lines: `secure-review` from npm, this package
+  from `github:sstaempfli/secure-review-runtime#v1.1.1`. Added a short
+  rationale paragraph.
+
+## [1.1.0] — 2026-05-04 (GitHub release on `master`, tag pending)
 
 ### Added
 - **Opt-in gate for runtime attack modes.** `attack` / `attack-ai` modes
