@@ -687,14 +687,36 @@ function decodeHtml(s: string): string {
     .replaceAll('&#39;', "'");
 }
 
-class RequestBudget {
+/**
+ * Per-run request + rate budget for attack-ai probes.
+ *
+ * Defensive clamps applied at construction:
+ * - `maxRequests` is forced to `Math.max(1, ⌊value⌋)` so a misconfigured
+ *   `dynamic.max_requests: 0` (or negative) does not lock the planner
+ *   out of every probe with no signal.
+ * - `rateLimitPerSecond` is forced to `Math.max(0.1, value)` so a
+ *   misconfigured `dynamic.rate_limit_per_second: 0` does not divide
+ *   by zero (which would yield Infinity and an unbounded setTimeout)
+ *   and a negative value does not silently disable rate limiting.
+ *
+ * Exported so tests can construct it directly.
+ */
+export class RequestBudget {
   private used = 0;
   private lastRequestAt = 0;
+  private readonly maxRequests: number;
+  private readonly rateLimitPerSecond: number;
 
-  constructor(
-    private readonly maxRequests: number,
-    private readonly rateLimitPerSecond: number,
-  ) {}
+  constructor(maxRequests: number, rateLimitPerSecond: number) {
+    this.maxRequests =
+      Number.isFinite(maxRequests) && maxRequests >= 1
+        ? Math.floor(maxRequests)
+        : 1;
+    this.rateLimitPerSecond =
+      Number.isFinite(rateLimitPerSecond) && rateLimitPerSecond > 0
+        ? rateLimitPerSecond
+        : 0.1;
+  }
 
   remaining(): number {
     return this.maxRequests - this.used;
