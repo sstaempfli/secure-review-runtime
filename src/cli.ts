@@ -161,19 +161,47 @@ export function authHeadersFromCliList(lines: string[] | undefined): Record<stri
   return out;
 }
 
-/** JSON object of header names → values (CI secret / env). Values must be strings. */
+/**
+ * JSON object of header names → values (CI secret / env). Values must be
+ * strings.
+ *
+ * Surfaces parse problems via `log.warn` rather than silently dropping the
+ * input — previously a malformed JSON or non-string value made probes run
+ * unauthenticated with no feedback to the operator.
+ */
 export function parseAuthHeadersJson(raw: string | undefined): Record<string, string> | undefined {
   if (!raw?.trim()) return undefined;
+  let parsed: unknown;
   try {
-    const o = JSON.parse(raw) as Record<string, unknown>;
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(o)) {
-      if (typeof v === 'string') out[k] = v;
-    }
-    return Object.keys(out).length > 0 ? out : undefined;
-  } catch {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(
+      `auth-headers-json: ignored — JSON parse failed (${msg}). Probes will run unauthenticated unless other auth sources are configured.`,
+    );
     return undefined;
   }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    log.warn(
+      'auth-headers-json: ignored — expected a JSON object of header-name → string-value pairs (got an array, null, or non-object). Probes will run unauthenticated unless other auth sources are configured.',
+    );
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  const dropped: string[] = [];
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof v === 'string') {
+      out[k] = v;
+    } else {
+      dropped.push(k);
+    }
+  }
+  if (dropped.length > 0) {
+    log.warn(
+      `auth-headers-json: ${dropped.length} header value${dropped.length === 1 ? '' : 's'} dropped because the value was not a string (${dropped.slice(0, 5).join(', ')}${dropped.length > 5 ? ', …' : ''}). HTTP headers must be strings.`,
+    );
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** GitHub PR review body maximum is ~65536; keep headroom for summaries. */
