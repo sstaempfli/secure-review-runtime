@@ -53,23 +53,27 @@ required.
 
 ## Quickstart (60 seconds)
 
-A vulnerable demo server ships in this repo so you have something to
-point the scanner at:
+The repo ships a deliberately-vulnerable demo server **and** a working
+`.secure-review.yml` next to it, so the quickstart runs without you
+having to author a config first.
 
 ```bash
-# Terminal 1 — start the deliberately-vulnerable demo target
-node examples/vulnerable-target/server.js
+# Terminal 1 — start the demo target on :3000
+cd examples/vulnerable-target/
+node server.js
 # vulnerable-target listening on http://localhost:3000
 
-# Terminal 2 — run the deterministic attack mode against it
-npx secure-review-runtime attack . \
-    --target-url http://localhost:3000 \
-    --output-dir ./reports
-# → 9+ findings: missing CSP/HSTS/X-Frame-Options, weak Set-Cookie,
+# Terminal 2 — run the deterministic `attack` mode against it
+cd examples/vulnerable-target/
+npx secure-review-runtime attack
+# → 9 findings: missing CSP/HSTS/X-Frame-Options, weak Set-Cookie,
 #   permissive CORS, exposed /.env, info-disclosure Server header
 ```
 
-The Markdown report and JSON findings land under `./reports/`.
+(`attack` reads `./.secure-review.yml`, which sets `dynamic.enabled: true`
+and `target_url: http://localhost:3000`. No CLI flags needed for the
+demo; pass `--target-url` and `--output-dir` to override.) The Markdown
+report and JSON findings land under `./reports/` next to the config.
 
 ## Modes — when to use which
 

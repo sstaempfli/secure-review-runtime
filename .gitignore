@@ -2,6 +2,10 @@ node_modules/
 coverage/
 *.tsbuildinfo
 
+# Output of the quickstart demo (the example writes reports here when
+# you run `attack` from examples/vulnerable-target/).
+examples/**/reports/
+
 # Local env files — CLI loads .env via dotenv (src/cli.ts).
 # Never commit secrets used to authenticate to AI providers or scan targets.
 .env
