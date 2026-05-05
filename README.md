@@ -77,12 +77,21 @@ report and JSON findings land under `./reports/` next to the config.
 
 ## Modes — when to use which
 
-| Mode         | Cost          | Speed      | LLM keys?    | When to use                                                                 |
-|--------------|---------------|------------|--------------|-----------------------------------------------------------------------------|
-| `attack`     | $0            | seconds    | No           | Every PR. Catches the OWASP-easy stuff: headers, cookies, CORS, sensitive paths. |
-| `attack-ai`  | ~$0.05–$0.50  | 30–120s    | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. |
-| `pr-runtime` | as above      | as above   | as above     | The GitHub Action wrapper around `attack` / `attack-ai`. Posts a PR comment. |
+| Mode         | Cost                 | Speed      | LLM keys?    | When to use                                                                 |
+|--------------|----------------------|------------|--------------|-----------------------------------------------------------------------------|
+| `attack`     | $0                   | seconds    | No           | Every PR. Catches the OWASP-easy stuff: headers, cookies, CORS, sensitive paths. |
+| `attack-ai`  | depends on planner† | 30–120s    | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. |
+| `pr-runtime` | as above             | as above   | as above     | The GitHub Action wrapper around `attack` / `attack-ai`. Posts a PR comment. |
 | `attack` + `--pentest-scanners zap-baseline,nuclei` | $0 (binaries are local) | 5–15 min | No | Pre-release / nightly. Deeper coverage from external scanners. |
+
+† `attack-ai` runs **one** LLM-planning call per run (capped at 3000
+output tokens by default) plus deterministic HTTP probes that don't
+hit the LLM. Cost depends on your provider and chosen model; the
+runtime reports the actual cost as `totalCostUSD` in the JSON
+findings file. Set `gates.max_cost_usd` in your config (or pass
+`--max-cost-usd` / the `max-cost-usd` Action input — default 20) as a
+post-planning circuit breaker that aborts if the planner exceeded
+that budget.
 
 ## Security model — please read
 
