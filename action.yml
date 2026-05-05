@@ -37,7 +37,7 @@ inputs:
     required: false
     default: '900'
   max-cost-usd:
-    description: 'Cost cap for attack-ai (ignored for deterministic attack-only segments)'
+    description: 'Cost cap for attack-ai (USD). Acts as a post-planning circuit breaker: if the LLM-planning call exceeded this, the run aborts before probing. Set to 0 to disable. Ignored by the deterministic `attack` mode (which never calls an LLM).'
     required: false
     default: '20'
   enable-runtime-attacks:

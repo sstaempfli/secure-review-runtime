@@ -178,6 +178,22 @@ export async function runAttackAiMode(input: AttackAiModeInput): Promise<AttackA
     skill: attacker.skill,
     maxTokens: attacker.maxTokens,
   });
+
+  // Cost cap (circuit breaker). The planner is the only LLM call in the
+  // runtime path, so its cost is the total LLM cost of this run. If the
+  // configured gates.max_cost_usd was set and the planner already spent
+  // more than that, abort BEFORE executing probes — even though the
+  // money is already spent, we at least prevent further work + report
+  // the overrun loudly. Setting max_cost_usd to 0 disables the cap
+  // (matches the existing "0 means unlimited" convention used elsewhere
+  // in the secure-review schema).
+  const maxCostUsd = input.config.gates.max_cost_usd;
+  if (Number.isFinite(maxCostUsd) && maxCostUsd > 0 && planned.usage.costUSD > maxCostUsd) {
+    throw new Error(
+      `Cost cap exceeded: attack-ai planner used $${planned.usage.costUSD.toFixed(4)} but gates.max_cost_usd is $${maxCostUsd.toFixed(4)}. Aborting before probe execution. Raise gates.max_cost_usd in your config or pass --max-cost-usd to allow this run.`,
+    );
+  }
+
   const hypotheses = sanitizeHypotheses(planned.hypotheses, targetUrl).slice(0, remainingProbeSlots(budget));
   log.info(`Model proposed ${planned.hypotheses.length}; executing ${hypotheses.length} safe same-origin probe${hypotheses.length === 1 ? '' : 's'}`);
 
