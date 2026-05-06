@@ -3,15 +3,22 @@ import { SEVERITY_ORDER } from 'secure-review';
 import { agreementCount } from 'secure-review';
 import type { AttackAiModeOutput } from '../modes/attack-ai.js';
 import type { AttackModeOutput } from '../modes/attack.js';
+import {
+  escapeBodyText,
+  escapeHeading,
+  escapeInlineCode,
+  escapeTableCell,
+} from '../internal/markdown-escape.js';
 
 export function renderAttackReport(output: AttackModeOutput): string {
   const parts: string[] = [];
   parts.push(`# Secure Review — Runtime Attack Report`);
   parts.push(`\nGenerated: ${new Date().toISOString()}`);
-  parts.push(`Target: ${output.targetUrl}`);
+  parts.push(`Target: ${escapeBodyText(output.targetUrl)}`);
   parts.push(`Duration: ${(output.totalDurationMs / 1000).toFixed(1)}s`);
   parts.push(`Gate blocked: ${output.gateBlocked ? 'YES' : 'no'}`);
-  if (output.gateReasons.length) parts.push(`Reasons: ${output.gateReasons.join('; ')}`);
+  if (output.gateReasons.length)
+    parts.push(`Reasons: ${escapeBodyText(output.gateReasons.join('; '))}`);
   parts.push('');
 
   parts.push(`## Summary\n`);
@@ -24,7 +31,7 @@ export function renderAttackReport(output: AttackModeOutput): string {
   parts.push('|---|---|---:|---|---:|---|');
   for (const c of output.checks) {
     parts.push(
-      `| ${c.check} | \`${c.url}\` | ${c.status ?? ''} | ${c.ok ? 'yes' : 'no'} | ${(c.durationMs / 1000).toFixed(1)}s | ${c.error ?? ''} |`,
+      `| ${escapeTableCell(c.check)} | \`${escapeInlineCode(c.url)}\` | ${escapeTableCell(c.status ?? '')} | ${c.ok ? 'yes' : 'no'} | ${(c.durationMs / 1000).toFixed(1)}s | ${escapeTableCell(c.error ?? '')} |`,
     );
   }
   parts.push('');
@@ -44,14 +51,15 @@ export function renderAttackAiReport(output: AttackAiModeOutput): string {
   const parts: string[] = [];
   parts.push(`# Secure Review — AI Attack Simulation Report`);
   parts.push(`\nGenerated: ${new Date().toISOString()}`);
-  parts.push(`Target: ${output.targetUrl}`);
+  parts.push(`Target: ${escapeBodyText(output.targetUrl)}`);
   parts.push(
-    `Attacker: **${output.attacker.provider}** / \`${output.attacker.model}\` · skill: \`${output.attacker.skillPath}\``,
+    `Attacker: **${escapeHeading(output.attacker.provider)}** / \`${escapeInlineCode(output.attacker.model)}\` · skill: \`${escapeInlineCode(output.attacker.skillPath)}\``,
   );
   parts.push(`Duration: ${(output.totalDurationMs / 1000).toFixed(1)}s`);
   parts.push(`Cost: $${output.totalCostUSD.toFixed(3)}`);
   parts.push(`Gate blocked: ${output.gateBlocked ? 'YES' : 'no'}`);
-  if (output.gateReasons.length) parts.push(`Reasons: ${output.gateReasons.join('; ')}`);
+  if (output.gateReasons.length)
+    parts.push(`Reasons: ${escapeBodyText(output.gateReasons.join('; '))}`);
   parts.push('');
 
   parts.push(`## Summary\n`);
@@ -74,7 +82,7 @@ export function renderAttackAiReport(output: AttackAiModeOutput): string {
   parts.push('|---|---|---|---|---:|---|---|');
   for (const p of output.probes) {
     parts.push(
-      `| ${p.hypothesisId} | ${p.category} | ${p.method} | \`${p.url}\` | ${p.status ?? ''} | ${p.confirmed ? 'yes' : 'no'} | ${p.error ?? ''} |`,
+      `| ${escapeTableCell(p.hypothesisId)} | ${escapeTableCell(p.category)} | ${escapeTableCell(p.method)} | \`${escapeInlineCode(p.url)}\` | ${escapeTableCell(p.status ?? '')} | ${p.confirmed ? 'yes' : 'no'} | ${escapeTableCell(p.error ?? '')} |`,
     );
   }
   parts.push('');
@@ -91,21 +99,21 @@ export function renderAttackAiReport(output: AttackAiModeOutput): string {
 }
 
 function renderFinding(f: Finding): string {
-  const reporters = f.reportedBy.join(', ');
-  const tags = [f.cwe, f.owaspCategory].filter(Boolean).join(' · ');
+  const reporters = f.reportedBy.map(escapeHeading).join(', ');
+  const tags = [f.cwe, f.owaspCategory].filter(Boolean).map(escapeHeading).join(' · ');
   const count = agreementCount(f);
   const agreementBadge = count > 1 ? ` · ✅ confirmed by ${count} models` : '';
-  const stableTag = f.stableId ? ` [${f.stableId}]` : '';
+  const stableTag = f.stableId ? ` [${escapeHeading(f.stableId)}]` : '';
   return `
-### ${f.id}${stableTag} · **${f.severity}** · ${f.title}${agreementBadge}
+### ${escapeHeading(f.id)}${stableTag} · **${escapeHeading(f.severity)}** · ${escapeHeading(f.title)}${agreementBadge}
 
-- **File:** \`${f.file}:${f.lineStart}-${f.lineEnd}\`
+- **File:** \`${escapeInlineCode(`${f.file}:${f.lineStart}-${f.lineEnd}`)}\`
 - **Tags:** ${tags || '—'}
 - **Reported by:** ${reporters}  (confidence: ${(f.confidence * 100).toFixed(0)}%, agreement: ${count} model${count !== 1 ? 's' : ''})
 
-${f.description}
+${escapeBodyText(f.description)}
 
-${f.remediation ? `**Remediation:** ${f.remediation}` : ''}
+${f.remediation ? `**Remediation:** ${escapeBodyText(f.remediation)}` : ''}
 `;
 }
 

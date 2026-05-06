@@ -1,6 +1,6 @@
 # secure-review-runtime
 
-> Layer-4 runtime security probes for live HTTP services. Deterministic
+> Runtime HTTP security probes for live services. Deterministic
 > baseline checks, optional LLM-planned same-origin probing, and OWASP
 > ZAP / Nuclei wrappers — usable as a CLI, locally, or as a GitHub
 > Action that comments on every PR.
@@ -33,38 +33,65 @@ Use `secure-review` alone for source-only review (`review`, `fix`,
 
 ## Install
 
+`secure-review-runtime` is **GitHub-only by design** — it isn't published
+on the npm registry. The static peer (`secure-review`) IS on npm.
+
 ```bash
-npm install --save-dev secure-review secure-review-runtime
+# Static peer (npm)
+npm install --save-dev secure-review
+
+# This package (GitHub — pin to a tag)
+npm install --save-dev github:sstaempfli/secure-review-runtime#v1.1.1
 ```
+
+Why GitHub-only? The runtime path probes live targets and we'd rather
+ask users to pin a specific tag than risk a broad npm rollout while the
+threat model is still evolving. The static peer is stable and ships
+through the registry as usual. As a GitHub-installed package, the
+`prepare` script auto-builds `dist/` on first install — Node 20+ is
+required.
 
 ## Quickstart (60 seconds)
 
-A vulnerable demo server ships in this repo so you have something to
-point the scanner at:
+The repo ships a deliberately-vulnerable demo server **and** a working
+`.secure-review.yml` next to it, so the quickstart runs without you
+having to author a config first.
 
 ```bash
-# Terminal 1 — start the deliberately-vulnerable demo target
-node examples/vulnerable-target/server.js
+# Terminal 1 — start the demo target on :3000
+cd examples/vulnerable-target/
+node server.js
 # vulnerable-target listening on http://localhost:3000
 
-# Terminal 2 — run the deterministic attack mode against it
-npx secure-review-runtime attack . \
-    --target-url http://localhost:3000 \
-    --output-dir ./reports
-# → 9+ findings: missing CSP/HSTS/X-Frame-Options, weak Set-Cookie,
+# Terminal 2 — run the deterministic `attack` mode against it
+cd examples/vulnerable-target/
+npx secure-review-runtime attack
+# → 9 findings: missing CSP/HSTS/X-Frame-Options, weak Set-Cookie,
 #   permissive CORS, exposed /.env, info-disclosure Server header
 ```
 
-The Markdown report and JSON findings land under `./reports/`.
+(`attack` reads `./.secure-review.yml`, which sets `dynamic.enabled: true`
+and `target_url: http://localhost:3000`. No CLI flags needed for the
+demo; pass `--target-url` and `--output-dir` to override.) The Markdown
+report and JSON findings land under `./reports/` next to the config.
 
 ## Modes — when to use which
 
-| Mode         | Cost          | Speed      | LLM keys?    | When to use                                                                 |
-|--------------|---------------|------------|--------------|-----------------------------------------------------------------------------|
-| `attack`     | $0            | seconds    | No           | Every PR. Catches the OWASP-easy stuff: headers, cookies, CORS, sensitive paths. |
-| `attack-ai`  | ~$0.05–$0.50  | 30–120s    | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. |
-| `pr-runtime` | as above      | as above   | as above     | The GitHub Action wrapper around `attack` / `attack-ai`. Posts a PR comment. |
+| Mode         | Cost                 | Speed      | LLM keys?    | When to use                                                                 |
+|--------------|----------------------|------------|--------------|-----------------------------------------------------------------------------|
+| `attack`     | $0                   | seconds    | No           | Every PR. Catches the OWASP-easy stuff: headers, cookies, CORS, sensitive paths. |
+| `attack-ai`  | depends on planner† | 30–120s    | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. |
+| `pr-runtime` | as above             | as above   | as above     | The GitHub Action wrapper around `attack` / `attack-ai`. Posts a PR comment. |
 | `attack` + `--pentest-scanners zap-baseline,nuclei` | $0 (binaries are local) | 5–15 min | No | Pre-release / nightly. Deeper coverage from external scanners. |
+
+† `attack-ai` runs **one** LLM-planning call per run (capped at 3000
+output tokens by default) plus deterministic HTTP probes that don't
+hit the LLM. Cost depends on your provider and chosen model; the
+runtime reports the actual cost as `totalCostUSD` in the JSON
+findings file. Set `gates.max_cost_usd` in your config (or pass
+`--max-cost-usd` / the `max-cost-usd` Action input — default 20) as a
+post-planning circuit breaker that aborts if the planner exceeded
+that budget.
 
 ## Security model — please read
 
@@ -117,18 +144,26 @@ What flows through to the script:
   `DISPLAY`, `XAUTHORITY`, `WAYLAND_DISPLAY`, `XDG_*`
 - Proxy config: `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (both case forms)
 - Custom CA bundle: `NODE_EXTRA_CA_CERTS` (additive — does NOT disable TLS)
-- Prefix-matched: `PLAYWRIGHT_*`, `PUPPETEER_*`, and the explicit
-  user-opt-in `SECURE_REVIEW_FORWARD_*`
+- Prefix-matched: `PLAYWRIGHT_*`, `PUPPETEER_*`
 - Safe Node tunables: `NODE_ENV` only (intentionally NOT `NODE_OPTIONS`,
   `NODE_PATH`, or `NODE_TLS_REJECT_UNAUTHORIZED`)
 
-If your login script genuinely needs an env var that's blocked, prefix
-it with `SECURE_REVIEW_FORWARD_` to opt in:
+If your login script (or, for the external scanners, your `nuclei` /
+`docker` invocation) genuinely needs an env var that's blocked, prefix
+it with `SECURE_REVIEW_FORWARD_` to opt in. **The prefix is stripped
+before the child process sees the variable**, so the receiver tool
+sees the real env name it expects:
 
 ```bash
+# The browser-login script sees MY_TOKEN=xyz, not SECURE_REVIEW_FORWARD_MY_TOKEN.
 SECURE_REVIEW_FORWARD_MY_TOKEN=xyz npx secure-review-runtime attack . \
     --target-url ... --browser-login-script ./login.mjs
 ```
+
+External scanners use the same pattern: `buildScannerEnv` extends the
+common base with `DOCKER_*` and `NUCLEI_*` prefixes, so the docker CLI
+and `nuclei` see their normal config keys without you having to wrap
+them in `SECURE_REVIEW_FORWARD_`.
 
 ## CLI
 

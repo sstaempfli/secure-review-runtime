@@ -6,7 +6,9 @@ describe('isRuntimeAttackAllowed', () => {
     const decision = isRuntimeAttackAllowed({ dynamic: { enabled: false } }, false);
     expect(decision.allowed).toBe(false);
     if (!decision.allowed) {
-      expect(decision.reason).toMatch(/dynamic\.enabled/);
+      // The reason should name dynamic.enabled (or its YAML equivalent) and the CLI flag.
+      expect(decision.reason).toMatch(/dynamic:/);
+      expect(decision.reason).toMatch(/enabled: true/);
       expect(decision.reason).toMatch(/--enable-runtime-attacks/);
     }
   });
@@ -48,13 +50,26 @@ describe('isRuntimeAttackAllowed', () => {
     expect(decision.allowed).toBe(false);
   });
 
-  it('reason mentions both opt-in routes (config and flag) so the user can fix it', () => {
+  it('reason mentions all three opt-in routes (config YAML, CLI flag, Action input) so the user can fix it', () => {
     const decision = isRuntimeAttackAllowed({ dynamic: { enabled: false } }, false);
     expect(decision.allowed).toBe(false);
     if (!decision.allowed) {
-      expect(decision.reason).toMatch(/dynamic\.enabled: true/);
+      // Config YAML route
+      expect(decision.reason).toMatch(/dynamic:/);
+      expect(decision.reason).toMatch(/enabled: true/);
+      // CLI flag route
       expect(decision.reason).toMatch(/--enable-runtime-attacks/);
+      // GH Action input route
       expect(decision.reason).toMatch(/enable-runtime-attacks: true/);
+    }
+  });
+
+  it('reason includes a literal copy-pasteable YAML snippet (so the user can fix it in 10 seconds)', () => {
+    const decision = isRuntimeAttackAllowed({ dynamic: { enabled: false } }, false);
+    if (!decision.allowed) {
+      // The 3-line YAML snippet must be intact and indented for paste-ready use.
+      expect(decision.reason).toContain('dynamic:');
+      expect(decision.reason).toContain('  enabled: true');
     }
   });
 });

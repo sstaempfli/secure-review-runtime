@@ -1,0 +1,33 @@
+# Demo config for the vulnerable-target quickstart.
+#
+# The deterministic `attack` mode does NOT use any LLM, so the writer and
+# reviewers blocks below are placeholders required only because the
+# shared `secure-review` schema validates them. Nothing is loaded from
+# them when you run `attack`.
+#
+# To run `attack-ai` (LLM-planned probing) against this target you would
+# need to fill writer/reviewers with real models and have a provider API
+# key in your env.
+
+writer:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  skill: ./placeholder-skill-not-used-by-attack.md
+
+reviewers:
+  - provider: anthropic
+    model: claude-sonnet-4-6
+    skill: ./placeholder-skill-not-used-by-attack.md
+    name: demo-reviewer
+
+dynamic:
+  # Opt-in to runtime probing. Without this, attack / attack-ai skip
+  # cleanly with a warning (see the README "Security model" section).
+  enabled: true
+
+  # The vulnerable-target server listens on :3000 by default.
+  target_url: http://localhost:3000
+
+  # Default checks: headers, cookies, cors, sensitive_paths.
+  # Uncomment to override.
+  # checks: [headers, cookies, cors, sensitive_paths]

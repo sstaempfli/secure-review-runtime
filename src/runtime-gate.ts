@@ -1,17 +1,18 @@
 /**
  * Opt-in gate for runtime attack modes (`attack` and `attack-ai`).
  *
- * Why this exists: the GitHub Action shipped by this package defaults
- * `mode: attack-ai` (see `action.yml`). Combined with a stale or
- * copy-pasted `dynamic.target_url` in `.secure-review.yml`, that means
- * every PR could silently fire LLM-planned probes (or deterministic HTTP
- * probes) at a third-party host the user no longer intends to test.
+ * Why this exists: the GitHub Action defaults `mode: attack`. Combined
+ * with a stale or copy-pasted `dynamic.target_url` in
+ * `.secure-review.yml`, that could fire HTTP probes (or, with
+ * `mode: attack-ai`, LLM-planned probes) at a third-party host the
+ * user no longer intends to test.
  *
  * Resolution: runtime attacks must be opted in to, either by setting
  * `dynamic.enabled: true` in the config or by passing the explicit
  * `--enable-runtime-attacks` CLI flag (or `INPUT_ENABLE_RUNTIME_ATTACKS`
  * Action input). Otherwise the runtime modes refuse to fire and emit a
- * clear warning explaining why.
+ * clear warning explaining why — including a literal config snippet
+ * the user can paste straight into their `.secure-review.yml`.
  */
 
 export interface RuntimeGateConfig {
@@ -31,7 +32,8 @@ export type RuntimeGateDecision =
  *  2. Explicit Action input (`INPUT_ENABLE_RUNTIME_ATTACKS=true`) →
  *     allowed (callers should map this to `enableFlag` before calling).
  *  3. Config `dynamic.enabled === true` → allowed.
- *  4. Default → blocked with an actionable message.
+ *  4. Default → blocked with an actionable message that names all three
+ *     opt-in routes and shows a literal YAML snippet for the config one.
  */
 export function isRuntimeAttackAllowed(
   config: RuntimeGateConfig,
@@ -42,7 +44,12 @@ export function isRuntimeAttackAllowed(
   return {
     allowed: false,
     reason:
-      'Runtime attacks are not enabled. Set `dynamic.enabled: true` in your config (.secure-review.yml) or pass `--enable-runtime-attacks` (CLI) / `enable-runtime-attacks: true` (GitHub Action input) to opt in. Skipping runtime probes; no requests sent.',
+      'Runtime attacks are not enabled — skipping (no requests sent). Pick ONE of the three opt-in routes:\n' +
+      '  (a) Add this to your .secure-review.yml:\n' +
+      '        dynamic:\n' +
+      '          enabled: true\n' +
+      "  (b) Pass --enable-runtime-attacks on the CLI (one-off override).\n" +
+      "  (c) Set 'enable-runtime-attacks: true' as the GitHub Action input (per-workflow override).",
   };
 }
 

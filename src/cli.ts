@@ -25,6 +25,7 @@ import { parsePentestScannerList, runCliPentestScanners } from './pentest/cli-sc
 import { renderAttackReport, renderAttackAiReport } from './reporters/attack-markdown.js';
 import { renderAttackEvidence, renderAttackAiEvidence } from './reporters/attack-json.js';
 import { isRuntimeAttackAllowed, parseBooleanFlag } from './runtime-gate.js';
+import { assertRuntimeConfigShape } from './internal/schema-guard.js';
 
 
 if (existsSync('.env')) {
@@ -136,7 +137,7 @@ export function parseAttackProvider(raw: string) {
   return parsed.data;
 }
 
-/** Parse `Name: value` headers for authenticated Layer 4 probes (repeatable CLI `-H`). */
+/** Parse `Name: value` headers for authenticated runtime HTTP probes (repeatable CLI `-H`). */
 export function parseAuthHeaderLine(raw: string): { name: string; value: string } {
   const trimmed = raw.trim();
   const idx = trimmed.indexOf(':');
@@ -161,19 +162,47 @@ export function authHeadersFromCliList(lines: string[] | undefined): Record<stri
   return out;
 }
 
-/** JSON object of header names → values (CI secret / env). Values must be strings. */
+/**
+ * JSON object of header names → values (CI secret / env). Values must be
+ * strings.
+ *
+ * Surfaces parse problems via `log.warn` rather than silently dropping the
+ * input — previously a malformed JSON or non-string value made probes run
+ * unauthenticated with no feedback to the operator.
+ */
 export function parseAuthHeadersJson(raw: string | undefined): Record<string, string> | undefined {
   if (!raw?.trim()) return undefined;
+  let parsed: unknown;
   try {
-    const o = JSON.parse(raw) as Record<string, unknown>;
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(o)) {
-      if (typeof v === 'string') out[k] = v;
-    }
-    return Object.keys(out).length > 0 ? out : undefined;
-  } catch {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(
+      `auth-headers-json: ignored — JSON parse failed (${msg}). Probes will run unauthenticated unless other auth sources are configured.`,
+    );
     return undefined;
   }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    log.warn(
+      'auth-headers-json: ignored — expected a JSON object of header-name → string-value pairs (got an array, null, or non-object). Probes will run unauthenticated unless other auth sources are configured.',
+    );
+    return undefined;
+  }
+  const out: Record<string, string> = {};
+  const dropped: string[] = [];
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof v === 'string') {
+      out[k] = v;
+    } else {
+      dropped.push(k);
+    }
+  }
+  if (dropped.length > 0) {
+    log.warn(
+      `auth-headers-json: ${dropped.length} header value${dropped.length === 1 ? '' : 's'} dropped because the value was not a string (${dropped.slice(0, 5).join(', ')}${dropped.length > 5 ? ', …' : ''}). HTTP headers must be strings.`,
+    );
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** GitHub PR review body maximum is ~65536; keep headroom for summaries. */
@@ -287,7 +316,7 @@ async function main(): Promise<void> {
   const program = new Command();
   program
     .name('secure-review-runtime')
-    .description('Runtime Layer-4 probes: attack, attack-ai, pr-runtime (live targets + optional scanners)')
+    .description('Runtime HTTP probes: attack, attack-ai, pr-runtime (live targets + optional scanners)')
     .version(version)
     .option('-q, --quiet', 'suppress info output', false)
     .option('-v, --verbose', 'enable debug output', false)
@@ -298,7 +327,7 @@ async function main(): Promise<void> {
     });
   program
     .command('attack')
-    .description('Run Layer 4 deterministic runtime probes against a live target URL.')
+    .description('Run deterministic HTTP probes (security headers, cookies, CORS, sensitive paths) against a live target URL.')
     .argument('[path]', 'project root for config resolution', '.')
     .option('-c, --config <file>', 'config file', '.secure-review.yml')
     .option('-o, --output-dir <dir>', 'output directory', './reports')
@@ -346,6 +375,7 @@ async function main(): Promise<void> {
         try {
           const wallStarted = Date.now();
           const { config } = await loadConfig(opts.config);
+          assertRuntimeConfigShape(config);
           const rootResolved = resolve(path);
           let authHeaders = mergeAuthHeaders(
             config.dynamic.auth_headers,
@@ -511,6 +541,7 @@ async function main(): Promise<void> {
         try {
           const wallStarted = Date.now();
           const { config, configDir } = await loadConfig(opts.config);
+          assertRuntimeConfigShape(config);
 
           const gate = isRuntimeAttackAllowed(config, opts.enableRuntimeAttacks);
           if (!gate.allowed) {
@@ -671,6 +702,7 @@ async function main(): Promise<void> {
       ) => {
         try {
           const { config, configDir } = await loadConfig(opts.config);
+          assertRuntimeConfigShape(config);
           const env = loadEnv();
           applyMaxCostOverride(config, opts.maxCostUsd);
 
@@ -808,7 +840,7 @@ async function main(): Promise<void> {
             aggregateFindings.push(...pentest.findings);
           }
 
-          body += `\n<sub>secure-review-runtime · Layer 4 + optional external scanners</sub>`;
+          body += `\n<sub>secure-review-runtime · runtime HTTP + optional external scanners</sub>`;
 
           await postPrMarkdownReview({
             ...prPostBase,
@@ -832,31 +864,43 @@ async function main(): Promise<void> {
   // When running inside GitHub Actions with no explicit subcommand, default to `pr-runtime`.
   // The action.yml runs this entry with inputs mapped to env vars but no argv
   // subcommand — without this shim the CLI would print --help and exit.
-  const argv = [...process.argv];
-  const inRunner = process.env.GITHUB_ACTIONS === 'true';
+  const argv = buildGhActionArgv(process.argv, process.env);
+
+  await program.parseAsync(argv);
+}
+
+/**
+ * Pure function (no I/O, no side effects) that wraps the argv-shim used
+ * to invoke this CLI from a GitHub Actions job. When `GITHUB_ACTIONS=true`
+ * and no subcommand is present in argv, append `pr-runtime` and translate
+ * each documented `INPUT_*` env var into its corresponding CLI flag.
+ *
+ * Exported so tests can verify the wiring without spawning Node.
+ */
+export function buildGhActionArgv(
+  inputArgv: readonly string[],
+  env: NodeJS.ProcessEnv,
+): string[] {
+  const argv = [...inputArgv];
+  const inRunner = env.GITHUB_ACTIONS === 'true';
   const hasSubcommand = argv.slice(2).some((a) =>
     ['attack', 'attack-ai', 'pr-runtime', 'help'].includes(a),
   );
-  if (inRunner && !hasSubcommand) {
-    const mode = (process.env.INPUT_MODE ?? 'review').toLowerCase();
-    argv.push('pr-runtime');
-    if (mode === 'fix') argv.push('--autofix');
-    const configInput = process.env.INPUT_CONFIG;
-    if (configInput) argv.push('--config', configInput);
-    const maxCostInput = process.env.INPUT_MAX_COST_USD;
-    if (maxCostInput) argv.push('--max-cost-usd', maxCostInput);
-    const runtimeModeInput = process.env.INPUT_RUNTIME_MODE;
-    if (runtimeModeInput) argv.push('--runtime-mode', runtimeModeInput);
-    const targetUrlInput = process.env.INPUT_TARGET_URL;
-    if (targetUrlInput) argv.push('--target-url', targetUrlInput);
-    const timeoutInput = process.env.INPUT_RUNTIME_TIMEOUT_SECONDS;
-    if (timeoutInput) argv.push('--runtime-timeout-seconds', timeoutInput);
-    if (parseBooleanFlag(process.env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
-      argv.push('--enable-runtime-attacks');
-    }
-  }
+  if (!inRunner || hasSubcommand) return argv;
 
-  await program.parseAsync(argv);
+  const mode = (env.INPUT_MODE ?? 'review').toLowerCase();
+  argv.push('pr-runtime');
+  if (mode === 'fix') argv.push('--autofix');
+  if (env.INPUT_CONFIG) argv.push('--config', env.INPUT_CONFIG);
+  if (env.INPUT_MAX_COST_USD) argv.push('--max-cost-usd', env.INPUT_MAX_COST_USD);
+  if (env.INPUT_RUNTIME_MODE) argv.push('--runtime-mode', env.INPUT_RUNTIME_MODE);
+  if (env.INPUT_TARGET_URL) argv.push('--target-url', env.INPUT_TARGET_URL);
+  if (env.INPUT_RUNTIME_TIMEOUT_SECONDS)
+    argv.push('--runtime-timeout-seconds', env.INPUT_RUNTIME_TIMEOUT_SECONDS);
+  if (parseBooleanFlag(env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
+    argv.push('--enable-runtime-attacks');
+  }
+  return argv;
 }
 
 function isDirectExecution(): boolean {

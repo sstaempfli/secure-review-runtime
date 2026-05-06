@@ -4,7 +4,117 @@ All notable changes to `secure-review-runtime` are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased] — 1.1.0 (proposed)
+## [1.1.1] — 2026-05-06
+
+(Same campaign as the original 2026-05-05 changelog below; absorbed three
+follow-up fixes from Google's Gemini Code Assist review on PR #2 before
+the merge.)
+
+### Changed (additional, after Gemini review)
+- **`SECURE_REVIEW_FORWARD_` prefix is now stripped before the env var
+  reaches the child.** Previously the prefix flowed through verbatim
+  (`SECURE_REVIEW_FORWARD_NUCLEI_TEMPLATES_DIR=/x` reached `nuclei` as
+  `SECURE_REVIEW_FORWARD_NUCLEI_TEMPLATES_DIR`, which `nuclei` ignored).
+  The escape hatch is now actually useful: the spawned tool sees the
+  real env var name (`NUCLEI_TEMPLATES_DIR=/x`). Forwarded vars also
+  override the regular allowlist on conflict (explicit user opt-in
+  beats the default).
+- **`DOCKER_` is now a prefix, not an explicit list.** Replaces the
+  five enumerated keys (`DOCKER_HOST`, `DOCKER_CONFIG`,
+  `DOCKER_CERT_PATH`, `DOCKER_TLS_VERIFY`, `DOCKER_BUILDKIT`) so future
+  / less-common docker env vars (`DOCKER_DEFAULT_PLATFORM`,
+  `DOCKER_SCAN_*`, etc.) flow through to `docker run` without future
+  maintenance.
+- **`runBrowserLoginScript` now warns when the script's `headers`
+  payload contains non-string values.** Matches the new
+  `parseAuthHeadersJson` behaviour from the same release. Previously
+  silent.
+
+## [1.1.1] — 2026-05-05
+
+Polish + bug-fix round following the post-merge validation pass on v1.1.0.
+GitHub-only release (this package is not published on npm by design); pin
+to `github:sstaempfli/secure-review-runtime#v1.1.1`.
+
+### Changed (breaking)
+- **`action.yml` default `mode` flipped from `attack-ai` → `attack`.**
+  `attack-ai` requires a provider API key and incurs a per-run cost; it
+  is no longer the default for the GitHub Action. Workflows that
+  relied on the previous default and want LLM-planned probing must
+  now set `mode: attack-ai` explicitly. Aligns with the README's
+  "use `attack` on every PR" guidance.
+
+### Added
+- **`gates.max_cost_usd` is now enforced** mid-run as a post-planning
+  circuit breaker for `attack-ai`. Previously `--max-cost-usd` mutated
+  the field but nothing consulted it. Setting `max_cost_usd: 0`
+  disables the cap.
+- **Schema guard at startup** (`assertRuntimeConfigShape`) — fails fast
+  with a clear "secure-review schema drifted" message if the peer
+  dependency removes or wrong-types `dynamic.enabled`,
+  `dynamic.target_url`, or `gates.max_cost_usd`.
+- **Working `examples/vulnerable-target/.secure-review.yml`** so the
+  README quickstart works zero-flag (it crashed before with `ENOENT`).
+- **CI workflow** already shipped in v1.1.0 unchanged.
+
+### Fixed
+- **README install command was broken** — claimed
+  `npm install secure-review-runtime` but the package is GitHub-only by
+  design. Split into two lines: `secure-review` from npm, this package
+  from `github:sstaempfli/secure-review-runtime#v1.1.1`. Added a short
+  rationale paragraph and dropped the fabricated "$0.05–$0.50" cost
+  claim that contradicted action.yml's $20 default.
+- **External-scanner env-leak (closes the v1.1.0 follow-up).** Both
+  `runNucleiExport` and `runZapBaselineDocker` now pass an allowlisted
+  env (`buildScannerEnv`) to `spawnSync` instead of the full
+  `process.env`. The browser-login allowlist was extracted to a shared
+  module `src/internal/env-allowlist.ts`; both profiles share a base
+  set (POSIX, locale, proxy, NODE_EXTRA_CA_CERTS) plus tooling-specific
+  additions (Playwright/Puppeteer for browser-login, Docker/Nuclei for
+  scanners) and the universal `SECURE_REVIEW_FORWARD_*` opt-in.
+- **Markdown injection in PR comments.** Reporter output and the ZAP
+  stderr appendix now route every interpolated finding field through
+  `escapeInlineCode` / `escapeTableCell` / `escapeFencedBlock` /
+  `escapeBodyText` / `escapeHeading`. Backticks, triple-backticks,
+  pipes, newlines, and `</details>` tags can no longer break the
+  table layout, escape an inline-code span, or close an enclosing
+  `<details>` block early.
+- **`parseAuthHeadersJson` now warns on every silent failure** —
+  malformed JSON, non-object root, non-string values. Previously the
+  function returned `undefined` with no log and probes ran
+  unauthenticated.
+- **`RequestBudget` clamps invalid configuration** — `rateLimitPerSecond`
+  to `Math.max(0.1, value)` (no more divide-by-zero `Infinity`),
+  `maxRequests` to `Math.max(1, floor(value))` (no more
+  zero-budget lockout).
+- **`runBrowserLoginScript` validates the script path** — trims
+  whitespace, `statSync`s the resolved path, and rejects directories /
+  sockets / FIFOs / non-existent symlink targets with messages that
+  name the offending type instead of the previous opaque
+  `execFileSync` crash. The JSON payload schema is also tightened:
+  arrays and `null` are explicitly rejected as the top-level value
+  and as the `headers` property.
+- **Gate-skip message is paste-ready.** When the opt-in gate refuses
+  to fire, the warning now includes a literal `dynamic:\n  enabled: true`
+  YAML snippet you can copy directly into `.secure-review.yml`,
+  alongside the CLI-flag and Action-input alternatives.
+- **Renamed "Layer-4" → "runtime HTTP"** throughout the README,
+  CHANGELOG, action.yml, and CLI command descriptions. The probes are
+  application-layer (Layer-7), not transport-layer.
+
+### Tests
+- Test suite grew from 28 cases to 97 across 11 files. New coverage:
+  scanner env profile, markdown escape (incl. hostile-field snapshot),
+  auth-headers JSON parse warnings, request budget clamps, schema
+  guard, browser-login path validation + JSON payload, GitHub Actions
+  argv-shim integration, and an in-process E2E run of `runAttackMode`
+  against a deliberately-vulnerable stub server.
+
+### Internal
+- `RequestBudget` and `buildGhActionArgv` are now exported (purely for
+  testability; not part of the public-facing API contract).
+
+## [1.1.0] — 2026-05-04 (GitHub release on `master`, tag pending)
 
 ### Added
 - **Opt-in gate for runtime attack modes.** `attack` / `attack-ai` modes

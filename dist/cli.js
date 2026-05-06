@@ -10,7 +10,7 @@ import {
   runAttackMode,
   runBrowserLoginScript,
   runCliPentestScanners
-} from "./chunk-YSJT4XDO.js";
+} from "./chunk-O5BYKZUT.js";
 
 // src/cli.ts
 import { readFile } from "fs/promises";
@@ -36,13 +36,56 @@ function isRuntimeAttackAllowed(config, enableFlag) {
   if (config.dynamic.enabled === true) return { allowed: true };
   return {
     allowed: false,
-    reason: "Runtime attacks are not enabled. Set `dynamic.enabled: true` in your config (.secure-review.yml) or pass `--enable-runtime-attacks` (CLI) / `enable-runtime-attacks: true` (GitHub Action input) to opt in. Skipping runtime probes; no requests sent."
+    reason: "Runtime attacks are not enabled \u2014 skipping (no requests sent). Pick ONE of the three opt-in routes:\n  (a) Add this to your .secure-review.yml:\n        dynamic:\n          enabled: true\n  (b) Pass --enable-runtime-attacks on the CLI (one-off override).\n  (c) Set 'enable-runtime-attacks: true' as the GitHub Action input (per-workflow override)."
   };
 }
 function parseBooleanFlag(raw) {
   if (raw === void 0 || raw === null) return false;
   const v = raw.trim().toLowerCase();
   return v === "true" || v === "1" || v === "yes" || v === "on";
+}
+
+// src/internal/schema-guard.ts
+function assertRuntimeConfigShape(config) {
+  const errors = [];
+  if (typeof config !== "object" || config === null) {
+    throw new Error(
+      "secure-review schema drifted: loaded config is not an object. Pin `secure-review` to ^1.0.x in your devDependencies."
+    );
+  }
+  const c = config;
+  if (typeof c.dynamic !== "object" || c.dynamic === null) {
+    errors.push("config.dynamic is missing or not an object");
+  } else {
+    const d = c.dynamic;
+    if (typeof d.enabled !== "boolean") {
+      errors.push(
+        "config.dynamic.enabled is missing or not a boolean (required for the runtime opt-in gate; without it the gate cannot decide whether to run)"
+      );
+    }
+    if (d.target_url !== void 0 && typeof d.target_url !== "string") {
+      errors.push(
+        "config.dynamic.target_url is set but not a string (a URL is expected when present)"
+      );
+    }
+  }
+  if (c.gates !== void 0) {
+    if (typeof c.gates !== "object" || c.gates === null) {
+      errors.push("config.gates is set but not an object");
+    } else {
+      const g = c.gates;
+      if (g.max_cost_usd !== void 0 && typeof g.max_cost_usd !== "number") {
+        errors.push(
+          "config.gates.max_cost_usd is set but not a number (the attack-ai cost circuit breaker compares it against the planner cost as a number)"
+        );
+      }
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      "secure-review schema mismatch \u2014 secure-review-runtime cannot run against the loaded config:\n" + errors.map((e) => `  - ${e}`).join("\n") + "\n\nThis usually means the `secure-review` peer dependency was upgraded to a version with an incompatible config shape. Pin `secure-review` to a tested-compatible range (currently ^1.0.x) in your devDependencies, or upgrade `secure-review-runtime` to a version that supports the new shape."
+    );
+  }
 }
 
 // src/cli.ts
@@ -158,16 +201,37 @@ function authHeadersFromCliList(lines) {
 }
 function parseAuthHeadersJson(raw) {
   if (!raw?.trim()) return void 0;
+  let parsed;
   try {
-    const o = JSON.parse(raw);
-    const out = {};
-    for (const [k, v] of Object.entries(o)) {
-      if (typeof v === "string") out[k] = v;
-    }
-    return Object.keys(out).length > 0 ? out : void 0;
-  } catch {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn(
+      `auth-headers-json: ignored \u2014 JSON parse failed (${msg}). Probes will run unauthenticated unless other auth sources are configured.`
+    );
     return void 0;
   }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    log.warn(
+      "auth-headers-json: ignored \u2014 expected a JSON object of header-name \u2192 string-value pairs (got an array, null, or non-object). Probes will run unauthenticated unless other auth sources are configured."
+    );
+    return void 0;
+  }
+  const out = {};
+  const dropped = [];
+  for (const [k, v] of Object.entries(parsed)) {
+    if (typeof v === "string") {
+      out[k] = v;
+    } else {
+      dropped.push(k);
+    }
+  }
+  if (dropped.length > 0) {
+    log.warn(
+      `auth-headers-json: ${dropped.length} header value${dropped.length === 1 ? "" : "s"} dropped because the value was not a string (${dropped.slice(0, 5).join(", ")}${dropped.length > 5 ? ", \u2026" : ""}). HTTP headers must be strings.`
+    );
+  }
+  return Object.keys(out).length > 0 ? out : void 0;
 }
 function capPrMarkdownBody(markdown, maxChars = 62e3) {
   if (markdown.length <= maxChars) return markdown;
@@ -262,12 +326,12 @@ var GithubPrEventSchema = z.object({
 async function main() {
   const version = await readPackageVersion();
   const program = new Command();
-  program.name("secure-review-runtime").description("Runtime Layer-4 probes: attack, attack-ai, pr-runtime (live targets + optional scanners)").version(version).option("-q, --quiet", "suppress info output", false).option("-v, --verbose", "enable debug output", false).hook("preAction", (thisCommand) => {
+  program.name("secure-review-runtime").description("Runtime HTTP probes: attack, attack-ai, pr-runtime (live targets + optional scanners)").version(version).option("-q, --quiet", "suppress info output", false).option("-v, --verbose", "enable debug output", false).hook("preAction", (thisCommand) => {
     const opts = thisCommand.opts();
     if (opts.quiet) setQuiet(true);
     if (opts.verbose) setVerbose(true);
   });
-  program.command("attack").description("Run Layer 4 deterministic runtime probes against a live target URL.").argument("[path]", "project root for config resolution", ".").option("-c, --config <file>", "config file", ".secure-review.yml").option("-o, --output-dir <dir>", "output directory", "./reports").option("--target-url <url>", "runtime target URL (overrides dynamic.target_url)").option("--checks <list>", "comma-separated dynamic checks: headers,cookies,cors,sensitive_paths", parseDynamicChecks).option("--timeout-seconds <n>", "per-request timeout in seconds", parseTimeoutSeconds).option(
+  program.command("attack").description("Run deterministic HTTP probes (security headers, cookies, CORS, sensitive paths) against a live target URL.").argument("[path]", "project root for config resolution", ".").option("-c, --config <file>", "config file", ".secure-review.yml").option("-o, --output-dir <dir>", "output directory", "./reports").option("--target-url <url>", "runtime target URL (overrides dynamic.target_url)").option("--checks <list>", "comma-separated dynamic checks: headers,cookies,cors,sensitive_paths", parseDynamicChecks).option("--timeout-seconds <n>", "per-request timeout in seconds", parseTimeoutSeconds).option(
     "-H, --header <pair>",
     "HTTP header Name: value on every probe (repeatable); merged over dynamic.auth_headers",
     (value, prev) => [...prev, value],
@@ -287,6 +351,7 @@ async function main() {
       try {
         const wallStarted = Date.now();
         const { config } = await loadConfig(opts.config);
+        assertRuntimeConfigShape(config);
         const rootResolved = resolve(path);
         let authHeaders = mergeAuthHeaders(
           config.dynamic.auth_headers,
@@ -407,6 +472,7 @@ ${appendix}` : "")
       try {
         const wallStarted = Date.now();
         const { config, configDir } = await loadConfig(opts.config);
+        assertRuntimeConfigShape(config);
         const gate = isRuntimeAttackAllowed(config, opts.enableRuntimeAttacks);
         if (!gate.allowed) {
           log.warn(`attack-ai skipped: ${gate.reason}`);
@@ -538,6 +604,7 @@ ${appendix}` : "")
     async (opts) => {
       try {
         const { config, configDir } = await loadConfig(opts.config);
+        assertRuntimeConfigShape(config);
         const env = loadEnv();
         applyMaxCostOverride(config, opts.maxCostUsd);
         const runtimeMode = resolvePrRuntimeMode(opts.runtimeMode);
@@ -652,7 +719,7 @@ _Cost (attack planner): $${aiOut.totalCostUSD.toFixed(3)}_
           aggregateFindings.push(...pentest.findings);
         }
         body += `
-<sub>secure-review-runtime \xB7 Layer 4 + optional external scanners</sub>`;
+<sub>secure-review-runtime \xB7 runtime HTTP + optional external scanners</sub>`;
         await postPrMarkdownReview({
           ...prPostBase,
           bodyMarkdown: capPrMarkdownBody(body)
@@ -670,30 +737,29 @@ _Cost (attack planner): $${aiOut.totalCostUSD.toFixed(3)}_
       }
     }
   );
-  const argv = [...process.argv];
-  const inRunner = process.env.GITHUB_ACTIONS === "true";
+  const argv = buildGhActionArgv(process.argv, process.env);
+  await program.parseAsync(argv);
+}
+function buildGhActionArgv(inputArgv, env) {
+  const argv = [...inputArgv];
+  const inRunner = env.GITHUB_ACTIONS === "true";
   const hasSubcommand = argv.slice(2).some(
     (a) => ["attack", "attack-ai", "pr-runtime", "help"].includes(a)
   );
-  if (inRunner && !hasSubcommand) {
-    const mode = (process.env.INPUT_MODE ?? "review").toLowerCase();
-    argv.push("pr-runtime");
-    if (mode === "fix") argv.push("--autofix");
-    const configInput = process.env.INPUT_CONFIG;
-    if (configInput) argv.push("--config", configInput);
-    const maxCostInput = process.env.INPUT_MAX_COST_USD;
-    if (maxCostInput) argv.push("--max-cost-usd", maxCostInput);
-    const runtimeModeInput = process.env.INPUT_RUNTIME_MODE;
-    if (runtimeModeInput) argv.push("--runtime-mode", runtimeModeInput);
-    const targetUrlInput = process.env.INPUT_TARGET_URL;
-    if (targetUrlInput) argv.push("--target-url", targetUrlInput);
-    const timeoutInput = process.env.INPUT_RUNTIME_TIMEOUT_SECONDS;
-    if (timeoutInput) argv.push("--runtime-timeout-seconds", timeoutInput);
-    if (parseBooleanFlag(process.env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
-      argv.push("--enable-runtime-attacks");
-    }
+  if (!inRunner || hasSubcommand) return argv;
+  const mode = (env.INPUT_MODE ?? "review").toLowerCase();
+  argv.push("pr-runtime");
+  if (mode === "fix") argv.push("--autofix");
+  if (env.INPUT_CONFIG) argv.push("--config", env.INPUT_CONFIG);
+  if (env.INPUT_MAX_COST_USD) argv.push("--max-cost-usd", env.INPUT_MAX_COST_USD);
+  if (env.INPUT_RUNTIME_MODE) argv.push("--runtime-mode", env.INPUT_RUNTIME_MODE);
+  if (env.INPUT_TARGET_URL) argv.push("--target-url", env.INPUT_TARGET_URL);
+  if (env.INPUT_RUNTIME_TIMEOUT_SECONDS)
+    argv.push("--runtime-timeout-seconds", env.INPUT_RUNTIME_TIMEOUT_SECONDS);
+  if (parseBooleanFlag(env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
+    argv.push("--enable-runtime-attacks");
   }
-  await program.parseAsync(argv);
+  return argv;
 }
 function isDirectExecution() {
   if (!process.argv[1]) return false;
@@ -712,6 +778,7 @@ if (isDirectExecution()) {
 }
 export {
   authHeadersFromCliList,
+  buildGhActionArgv,
   parseAttackProvider,
   parseAuthHeaderLine,
   parseAuthHeadersJson,
