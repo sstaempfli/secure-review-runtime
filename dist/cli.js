@@ -10,7 +10,7 @@ import {
   runAttackMode,
   runBrowserLoginScript,
   runCliPentestScanners
-} from "./chunk-IRJGRGC3.js";
+} from "./chunk-O5BYKZUT.js";
 
 // src/cli.ts
 import { readFile } from "fs/promises";

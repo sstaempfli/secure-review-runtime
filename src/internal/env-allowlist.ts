@@ -22,9 +22,13 @@
  * NOT a TLS-verification bypass like `NODE_TLS_REJECT_UNAUTHORIZED`).
  *
  * Both honour the universal opt-in escape hatch: any env key prefixed
- * with `SECURE_REVIEW_FORWARD_` flows through. Users who need a custom
- * non-standard env var in a spawned subprocess can re-export it under
- * that prefix.
+ * with `SECURE_REVIEW_FORWARD_` flows through, **with the prefix
+ * stripped before reaching the child**. Setting
+ * `SECURE_REVIEW_FORWARD_NUCLEI_TEMPLATES_DIR=/x` makes the spawned
+ * scanner see `NUCLEI_TEMPLATES_DIR=/x` — the receiver tools recognise
+ * their normal env var names, not our internal prefix. The forward
+ * also takes precedence over the regular allowlist on conflict (an
+ * explicit user opt-in beats a default).
  *
  * Deliberately blocked everywhere:
  * - Provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) and
@@ -84,14 +88,13 @@ const BROWSER_AUTOMATION_KEYS: ReadonlySet<string> = new Set([
 const BROWSER_AUTOMATION_PREFIXES: readonly string[] = ['PLAYWRIGHT_', 'PUPPETEER_'];
 
 /** External scanners — Docker socket/config + Nuclei templates. */
-const SCANNER_KEYS: ReadonlySet<string> = new Set([
-  'DOCKER_HOST',
-  'DOCKER_CONFIG',
-  'DOCKER_CERT_PATH',
-  'DOCKER_TLS_VERIFY',
-  'DOCKER_BUILDKIT',
-]);
-const SCANNER_PREFIXES: readonly string[] = ['NUCLEI_'];
+const SCANNER_KEYS: ReadonlySet<string> = new Set();
+// Docker uses a wide family of env vars (DOCKER_HOST, DOCKER_CONFIG,
+// DOCKER_CERT_PATH, DOCKER_TLS_VERIFY, DOCKER_BUILDKIT, DOCKER_SCAN_*,
+// DOCKER_DEFAULT_PLATFORM, etc.). Forward the whole prefix rather than
+// chasing each key individually as the docker CLI evolves.
+// Nuclei similarly uses NUCLEI_TEMPLATES_DIR, NUCLEI_CONFIG, etc.
+const SCANNER_PREFIXES: readonly string[] = ['DOCKER_', 'NUCLEI_'];
 
 /** Universal opt-in escape hatch. Honour everywhere. */
 const FORWARD_PREFIX = 'SECURE_REVIEW_FORWARD_';
@@ -102,16 +105,27 @@ function filterEnv(
   prefixes: readonly string[],
 ): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
+
+  // First pass: regular allowlist (explicit keys + tooling prefixes).
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined) continue;
-    if (
-      keys.has(key) ||
-      prefixes.some((p) => key.startsWith(p)) ||
-      key.startsWith(FORWARD_PREFIX)
-    ) {
+    if (keys.has(key) || prefixes.some((p) => key.startsWith(p))) {
       out[key] = value;
     }
   }
+
+  // Second pass: SECURE_REVIEW_FORWARD_* opt-in. Strip the prefix so the
+  // child sees the un-prefixed name (which is what receiver tools recognise),
+  // and let the forward override anything from the first pass on conflict
+  // (an explicit user opt-in beats the default allowlist value).
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    if (!key.startsWith(FORWARD_PREFIX)) continue;
+    const stripped = key.slice(FORWARD_PREFIX.length);
+    if (!stripped) continue; // ignore the bare prefix with no suffix
+    out[stripped] = value;
+  }
+
   return out;
 }
 

@@ -27,19 +27,24 @@ describe('buildScannerEnv (env passed to nuclei / docker)', () => {
     expect(allow.AZURE_CLIENT_SECRET).toBeUndefined();
   });
 
-  it('forwards Docker config keys (DOCKER_HOST etc.) for remote-socket setups', () => {
+  it('forwards the whole DOCKER_ family (prefix match — covers future docker CLI env vars)', () => {
     const allow = buildScannerEnv({
       DOCKER_HOST: 'tcp://daemon:2375',
       DOCKER_CONFIG: '/home/u/.docker',
       DOCKER_CERT_PATH: '/home/u/.docker/certs',
       DOCKER_TLS_VERIFY: '1',
       DOCKER_BUILDKIT: '1',
+      DOCKER_DEFAULT_PLATFORM: 'linux/amd64', // newer docker CLI flag
+      DOCKER_SCAN_SUGGEST: 'false', // docker scan plugin
     });
     expect(allow.DOCKER_HOST).toBe('tcp://daemon:2375');
     expect(allow.DOCKER_CONFIG).toBe('/home/u/.docker');
     expect(allow.DOCKER_CERT_PATH).toBe('/home/u/.docker/certs');
     expect(allow.DOCKER_TLS_VERIFY).toBe('1');
     expect(allow.DOCKER_BUILDKIT).toBe('1');
+    // Forward-by-prefix means future / less-common docker env vars flow too.
+    expect(allow.DOCKER_DEFAULT_PLATFORM).toBe('linux/amd64');
+    expect(allow.DOCKER_SCAN_SUGGEST).toBe('false');
   });
 
   it('forwards NUCLEI_* prefix (template dirs, config paths)', () => {
@@ -90,13 +95,36 @@ describe('buildScannerEnv (env passed to nuclei / docker)', () => {
     expect(allow.SSH_AUTH_SOCK).toBeUndefined();
   });
 
-  it('forwards SECURE_REVIEW_FORWARD_* (universal opt-in escape hatch)', () => {
+  it('strips the SECURE_REVIEW_FORWARD_ prefix on forward (so child sees the real env name)', () => {
     const allow = buildScannerEnv({
       SECURE_REVIEW_FORWARD_FOO: 'forward-me',
+      SECURE_REVIEW_FORWARD_NUCLEI_TEMPLATES_DIR: '/opt/custom-templates',
       SECURE_REVIEW_OTHER: 'should-not-flow',
     });
-    expect(allow.SECURE_REVIEW_FORWARD_FOO).toBe('forward-me');
+    // Stripped — the spawned tool sees its real env var name, not our prefix.
+    expect(allow.FOO).toBe('forward-me');
+    expect(allow.NUCLEI_TEMPLATES_DIR).toBe('/opt/custom-templates');
+    // Original prefixed name does NOT flow.
+    expect(allow.SECURE_REVIEW_FORWARD_FOO).toBeUndefined();
+    expect(allow.SECURE_REVIEW_FORWARD_NUCLEI_TEMPLATES_DIR).toBeUndefined();
+    // Sibling-prefix non-FORWARD must also not flow.
     expect(allow.SECURE_REVIEW_OTHER).toBeUndefined();
+  });
+
+  it('FORWARD overrides the regular allowlist on conflict (explicit user opt-in wins)', () => {
+    const allow = buildScannerEnv({
+      PATH: '/default/bin',
+      SECURE_REVIEW_FORWARD_PATH: '/custom/bin',
+    });
+    expect(allow.PATH).toBe('/custom/bin');
+  });
+
+  it('ignores the bare prefix with no suffix', () => {
+    const allow = buildScannerEnv({
+      SECURE_REVIEW_FORWARD_: 'no-suffix-should-not-create-empty-key',
+    });
+    expect(allow['']).toBeUndefined();
+    expect(allow.SECURE_REVIEW_FORWARD_).toBeUndefined();
   });
 
   it('forwards proxy env in both case forms (corporate proxy support)', () => {
@@ -166,6 +194,7 @@ describe('buildScannerEnv (env passed to nuclei / docker)', () => {
         "DOCKER_CONFIG",
         "DOCKER_HOST",
         "DOCKER_TLS_VERIFY",
+        "FOO",
         "HOME",
         "HTTPS_PROXY",
         "HTTP_PROXY",
@@ -178,7 +207,6 @@ describe('buildScannerEnv (env passed to nuclei / docker)', () => {
         "NO_PROXY",
         "NUCLEI_TEMPLATES_DIR",
         "PATH",
-        "SECURE_REVIEW_FORWARD_FOO",
         "SHELL",
         "TEMP",
         "TMP",

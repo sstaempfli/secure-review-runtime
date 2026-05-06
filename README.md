@@ -144,18 +144,26 @@ What flows through to the script:
   `DISPLAY`, `XAUTHORITY`, `WAYLAND_DISPLAY`, `XDG_*`
 - Proxy config: `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (both case forms)
 - Custom CA bundle: `NODE_EXTRA_CA_CERTS` (additive — does NOT disable TLS)
-- Prefix-matched: `PLAYWRIGHT_*`, `PUPPETEER_*`, and the explicit
-  user-opt-in `SECURE_REVIEW_FORWARD_*`
+- Prefix-matched: `PLAYWRIGHT_*`, `PUPPETEER_*`
 - Safe Node tunables: `NODE_ENV` only (intentionally NOT `NODE_OPTIONS`,
   `NODE_PATH`, or `NODE_TLS_REJECT_UNAUTHORIZED`)
 
-If your login script genuinely needs an env var that's blocked, prefix
-it with `SECURE_REVIEW_FORWARD_` to opt in:
+If your login script (or, for the external scanners, your `nuclei` /
+`docker` invocation) genuinely needs an env var that's blocked, prefix
+it with `SECURE_REVIEW_FORWARD_` to opt in. **The prefix is stripped
+before the child process sees the variable**, so the receiver tool
+sees the real env name it expects:
 
 ```bash
+# The browser-login script sees MY_TOKEN=xyz, not SECURE_REVIEW_FORWARD_MY_TOKEN.
 SECURE_REVIEW_FORWARD_MY_TOKEN=xyz npx secure-review-runtime attack . \
     --target-url ... --browser-login-script ./login.mjs
 ```
+
+External scanners use the same pattern: `buildScannerEnv` extends the
+common base with `DOCKER_*` and `NUCLEI_*` prefixes, so the docker CLI
+and `nuclei` see their normal config keys without you having to wrap
+them in `SECURE_REVIEW_FORWARD_`.
 
 ## CLI
 

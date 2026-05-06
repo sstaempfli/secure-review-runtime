@@ -4,6 +4,32 @@ All notable changes to `secure-review-runtime` are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [1.1.1] — 2026-05-06
+
+(Same campaign as the original 2026-05-05 changelog below; absorbed three
+follow-up fixes from Google's Gemini Code Assist review on PR #2 before
+the merge.)
+
+### Changed (additional, after Gemini review)
+- **`SECURE_REVIEW_FORWARD_` prefix is now stripped before the env var
+  reaches the child.** Previously the prefix flowed through verbatim
+  (`SECURE_REVIEW_FORWARD_NUCLEI_TEMPLATES_DIR=/x` reached `nuclei` as
+  `SECURE_REVIEW_FORWARD_NUCLEI_TEMPLATES_DIR`, which `nuclei` ignored).
+  The escape hatch is now actually useful: the spawned tool sees the
+  real env var name (`NUCLEI_TEMPLATES_DIR=/x`). Forwarded vars also
+  override the regular allowlist on conflict (explicit user opt-in
+  beats the default).
+- **`DOCKER_` is now a prefix, not an explicit list.** Replaces the
+  five enumerated keys (`DOCKER_HOST`, `DOCKER_CONFIG`,
+  `DOCKER_CERT_PATH`, `DOCKER_TLS_VERIFY`, `DOCKER_BUILDKIT`) so future
+  / less-common docker env vars (`DOCKER_DEFAULT_PLATFORM`,
+  `DOCKER_SCAN_*`, etc.) flow through to `docker run` without future
+  maintenance.
+- **`runBrowserLoginScript` now warns when the script's `headers`
+  payload contains non-string values.** Matches the new
+  `parseAuthHeadersJson` behaviour from the same release. Previously
+  silent.
+
 ## [1.1.1] — 2026-05-05
 
 Polish + bug-fix round following the post-merge validation pass on v1.1.0.

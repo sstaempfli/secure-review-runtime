@@ -1,12 +1,15 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { log } from 'secure-review';
 import { runBrowserLoginScript } from '../src/pentest/browser-login.js';
 
 const tmpDirs: string[] = [];
+const warnSpy = vi.spyOn(log, 'warn');
 
 afterEach(() => {
+  warnSpy.mockClear();
   while (tmpDirs.length) {
     const d = tmpDirs.pop()!;
     try {
@@ -100,11 +103,22 @@ describe('runBrowserLoginScript JSON payload validation', () => {
     expect(() => runBrowserLoginScript('probe.mjs', cwd)).toThrow(/"headers" must be a plain object/);
   });
 
-  it('accepts a valid object payload and silently drops non-string header values', () => {
+  it('accepts a valid object payload and warns when non-string header values are dropped', () => {
     const { cwd } = makeProbe(
       `console.log('{"headers": {"X-Token": "abc", "X-Count": 42, "X-Bool": true}}');\n`,
     );
     const result = runBrowserLoginScript('probe.mjs', cwd);
     expect(result.headers).toEqual({ 'X-Token': 'abc' });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]![0]).toMatch(/2 header values dropped/);
+    expect(warnSpy.mock.calls[0]![0]).toMatch(/X-Count/);
+    expect(warnSpy.mock.calls[0]![0]).toMatch(/X-Bool/);
+  });
+
+  it('does NOT warn when all header values are valid strings', () => {
+    const { cwd } = makeProbe(`console.log('{"headers": {"X-Token": "abc"}}');\n`);
+    const result = runBrowserLoginScript('probe.mjs', cwd);
+    expect(result.headers).toEqual({ 'X-Token': 'abc' });
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

@@ -1044,22 +1044,23 @@ var BROWSER_AUTOMATION_KEYS = /* @__PURE__ */ new Set([
   "XDG_RUNTIME_DIR"
 ]);
 var BROWSER_AUTOMATION_PREFIXES = ["PLAYWRIGHT_", "PUPPETEER_"];
-var SCANNER_KEYS = /* @__PURE__ */ new Set([
-  "DOCKER_HOST",
-  "DOCKER_CONFIG",
-  "DOCKER_CERT_PATH",
-  "DOCKER_TLS_VERIFY",
-  "DOCKER_BUILDKIT"
-]);
-var SCANNER_PREFIXES = ["NUCLEI_"];
+var SCANNER_KEYS = /* @__PURE__ */ new Set();
+var SCANNER_PREFIXES = ["DOCKER_", "NUCLEI_"];
 var FORWARD_PREFIX = "SECURE_REVIEW_FORWARD_";
 function filterEnv(source, keys, prefixes) {
   const out = {};
   for (const [key, value] of Object.entries(source)) {
     if (value === void 0) continue;
-    if (keys.has(key) || prefixes.some((p) => key.startsWith(p)) || key.startsWith(FORWARD_PREFIX)) {
+    if (keys.has(key) || prefixes.some((p) => key.startsWith(p))) {
       out[key] = value;
     }
+  }
+  for (const [key, value] of Object.entries(source)) {
+    if (value === void 0) continue;
+    if (!key.startsWith(FORWARD_PREFIX)) continue;
+    const stripped = key.slice(FORWARD_PREFIX.length);
+    if (!stripped) continue;
+    out[stripped] = value;
   }
   return out;
 }
@@ -1341,6 +1342,7 @@ function ghActionInput(name) {
 import { execFileSync } from "child_process";
 import { statSync } from "fs";
 import { isAbsolute, resolve } from "path";
+import { log as log3 } from "secure-review";
 var DEFAULT_TIMEOUT_MS = 12e4;
 function validateScriptPath(rawPath, cwd) {
   const trimmed = rawPath.trim();
@@ -1401,8 +1403,18 @@ function runBrowserLoginScript(scriptPath, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) 
       throw new Error('Browser login JSON "headers" must be a plain object of name \u2192 string-value pairs');
     }
     const headers = {};
+    const dropped = [];
     for (const [k, v] of Object.entries(payload.headers)) {
-      if (typeof v === "string" && k.trim()) headers[k] = v;
+      if (typeof v === "string" && k.trim()) {
+        headers[k] = v;
+      } else {
+        dropped.push(k.trim() ? k : "<empty key>");
+      }
+    }
+    if (dropped.length > 0) {
+      log3.warn(
+        `browser-login script: ${dropped.length} header value${dropped.length === 1 ? "" : "s"} dropped because the value was not a string or the key was empty (${dropped.slice(0, 5).join(", ")}${dropped.length > 5 ? ", \u2026" : ""}). HTTP headers must be string-typed.`
+      );
     }
     return { headers, stderr: "", durationMs: Date.now() - started };
   } catch (err) {
@@ -1424,4 +1436,4 @@ export {
   ghActionInput,
   runBrowserLoginScript
 };
-//# sourceMappingURL=chunk-IRJGRGC3.js.map
+//# sourceMappingURL=chunk-O5BYKZUT.js.map

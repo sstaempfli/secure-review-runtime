@@ -114,15 +114,20 @@ describe('buildAllowlistedEnv — unit', () => {
     expect(allow.WAYLAND_DISPLAY).toBe('wayland-0');
   });
 
-  it('forwards SECURE_REVIEW_FORWARD_* opt-in escape hatch (and only that prefix)', () => {
+  it('strips the SECURE_REVIEW_FORWARD_ prefix on forward (so child sees the real env name)', () => {
     const allow = buildAllowlistedEnv({
       SECURE_REVIEW_FORWARD_TOKEN: 'opt-in',
       SECURE_REVIEW_FORWARD_FOO: 'bar',
       SECURE_REVIEW_OTHER: 'should-not-flow',
       SECURE_REVIEW_AUTH_LEGACY: 'should-not-flow',
     });
-    expect(allow.SECURE_REVIEW_FORWARD_TOKEN).toBe('opt-in');
-    expect(allow.SECURE_REVIEW_FORWARD_FOO).toBe('bar');
+    // Stripped — child sees TOKEN / FOO, not the prefixed names.
+    expect(allow.TOKEN).toBe('opt-in');
+    expect(allow.FOO).toBe('bar');
+    // Original prefixed names do NOT flow.
+    expect(allow.SECURE_REVIEW_FORWARD_TOKEN).toBeUndefined();
+    expect(allow.SECURE_REVIEW_FORWARD_FOO).toBeUndefined();
+    // Sibling-prefix non-FORWARD must also not flow.
     expect(allow.SECURE_REVIEW_OTHER).toBeUndefined();
     expect(allow.SECURE_REVIEW_AUTH_LEGACY).toBeUndefined();
   });
@@ -204,6 +209,7 @@ describe('buildAllowlistedEnv — unit', () => {
         "CHROME_PATH",
         "CHROMIUM_FLAGS",
         "DISPLAY",
+        "FOO",
         "HOME",
         "HTTPS_PROXY",
         "HTTP_PROXY",
@@ -217,7 +223,6 @@ describe('buildAllowlistedEnv — unit', () => {
         "PATH",
         "PLAYWRIGHT_BROWSERS_PATH",
         "PUPPETEER_CACHE_DIR",
-        "SECURE_REVIEW_FORWARD_FOO",
         "SHELL",
         "TEMP",
         "TMP",
@@ -267,12 +272,14 @@ describe('runBrowserLoginScript end-to-end env stripping', () => {
     }
   });
 
-  it('forwards SECURE_REVIEW_FORWARD_* and PATH to the script', () => {
+  it('forwards SECURE_REVIEW_FORWARD_FOO as FOO (prefix-stripped) and PATH to the script', () => {
     vi.stubEnv('SECURE_REVIEW_FORWARD_FOO', 'forward-me');
     const { scriptPath, cwd } = makeProbeScript();
     const result = runBrowserLoginScript(scriptPath, cwd);
     const snapshot = JSON.parse(result.headers['X-Env-Snapshot']) as Record<string, string>;
-    expect(snapshot.SECURE_REVIEW_FORWARD_FOO).toBe('forward-me');
+    // The child sees FOO, not SECURE_REVIEW_FORWARD_FOO.
+    expect(snapshot.FOO).toBe('forward-me');
+    expect(snapshot.SECURE_REVIEW_FORWARD_FOO).toBeUndefined();
     expect(typeof snapshot.PATH, 'PATH must flow so child can find binaries').toBe('string');
   });
 });
