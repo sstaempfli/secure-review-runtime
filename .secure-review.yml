@@ -1,0 +1,34 @@
+writer:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  skill: ../secure-review/skills/secure-node-writer.md
+
+reviewers:
+  - name: owasp-reviewer
+    provider: anthropic
+    model: claude-sonnet-4-6
+    skill: ../secure-review/skills/owasp-reviewer.md
+
+sast:
+  enabled: false
+
+dynamic:
+  enabled: true
+  timeout_seconds: 30
+  checks: [headers, cookies, cors, sensitive_paths]
+  attacker:
+    provider: openai
+    model: gpt-4o
+    skill: skills/authorized-attack-simulator.md
+  sensitive_paths:
+    - /.env
+    - /.git/config
+    - /health
+    - /debug
+    - /config.json
+    - /swagger.json
+    - /openapi.json
+    - /metrics
+  gates:
+    block_on_confirmed_critical: true
+    block_on_confirmed_high: false

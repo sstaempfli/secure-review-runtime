@@ -513,6 +513,14 @@ async function main(): Promise<void> {
       'opt in to live runtime probing (overrides config dynamic.enabled=false). Required when dynamic.enabled is not true.',
       false,
     )
+    .option(
+      '--playwright',
+      'use a real Chromium browser (via Playwright) instead of the fetch-based crawler. ' +
+        'Renders JavaScript, discovers SPA routes, and intercepts XHR/fetch calls. ' +
+        'Required to probe past login pages. ' +
+        'Requires: npm install --save-dev playwright && npx playwright install chromium',
+      false,
+    )
     .option('--task-id <id>', 'task identifier for evidence JSON', 'unknown')
     .option('--run <n>', 'run number', '1')
     .action(
@@ -534,6 +542,7 @@ async function main(): Promise<void> {
           browserLoginScript?: string;
           pentestTimeoutSeconds?: number;
           enableRuntimeAttacks: boolean;
+          playwright: boolean;
           taskId: string;
           run: string;
         },
@@ -576,6 +585,7 @@ async function main(): Promise<void> {
             attackerModel: opts.attackModel,
             attackerSkillPath: opts.attackSkill,
             authHeaders: authHeaders ?? undefined,
+            usePlaywright: opts.playwright,
           });
           const stamp = timestamp();
           const mdPath = outputPath(

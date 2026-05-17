@@ -1,0 +1,246 @@
+{
+  "task_id": "unknown",
+  "tool": "secure-review",
+  "condition": "F-attack",
+  "run": 1,
+  "timestamp": "2026-05-11T18:48:31.233Z",
+  "model_version": "dynamic-runtime",
+  "total_findings_initial": 1,
+  "findings_by_severity_initial": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 1,
+    "LOW": 0,
+    "INFO": 0
+  },
+  "total_findings_after_fix": 1,
+  "findings_by_severity_after_fix": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 1,
+    "LOW": 0,
+    "INFO": 0
+  },
+  "new_findings_introduced": 0,
+  "findings_resolved": 0,
+  "resolution_rate_pct": 0,
+  "semgrep_after_fix": 0,
+  "eslint_after_fix": 0,
+  "lines_of_code_fixed": 0,
+  "review_report": "Runtime attack run against http://localhost:3000/",
+  "generation_time_seconds": 0.165,
+  "total_cost_usd": 0,
+  "review_status": "ok",
+  "failed_reviewers": [],
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "cwe": "CWE-1021",
+      "file": "http://localhost:3000/",
+      "lineStart": 0,
+      "lineEnd": 0,
+      "title": "Missing Content-Security-Policy header",
+      "description": "The response does not include a Content-Security-Policy header, reducing protection against XSS and content injection.",
+      "remediation": "Add a restrictive Content-Security-Policy header appropriate for the application.",
+      "id": "D-01",
+      "reportedBy": [
+        "dynamic"
+      ],
+      "confidence": 1
+    }
+  ],
+  "reviewers": [
+    "dynamic"
+  ],
+  "iterations": 0,
+  "target_url": "http://localhost:3000/",
+  "checks": [
+    {
+      "check": "headers",
+      "url": "http://localhost:3000/",
+      "method": "GET",
+      "status": 404,
+      "ok": true,
+      "durationMs": 83,
+      "evidence": {
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "59",
+          "content-type": "application/json; charset=utf-8",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "date": "Mon, 11 May 2026 18:48:31 GMT",
+          "etag": "W/\"3b-H04Se/s4qOSaN0eWcZu+cgc8PSI\"",
+          "keep-alive": "timeout=5",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=31536000; includeSubDomains",
+          "vary": "Origin",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0"
+        }
+      }
+    },
+    {
+      "check": "cookies",
+      "url": "http://localhost:3000/",
+      "method": "GET",
+      "status": 404,
+      "ok": true,
+      "durationMs": 7,
+      "evidence": {
+        "setCookieCount": 0,
+        "cookies": []
+      }
+    },
+    {
+      "check": "cors",
+      "url": "http://localhost:3000/",
+      "method": "GET",
+      "status": 404,
+      "ok": true,
+      "durationMs": 5,
+      "evidence": {
+        "requestHeaders": {
+          "Origin": "https://secure-review.invalid",
+          "Access-Control-Request-Method": "GET"
+        },
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "59",
+          "content-type": "application/json; charset=utf-8",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "date": "Mon, 11 May 2026 18:48:31 GMT",
+          "etag": "W/\"3b-H04Se/s4qOSaN0eWcZu+cgc8PSI\"",
+          "keep-alive": "timeout=5",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=31536000; includeSubDomains",
+          "vary": "Origin",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0"
+        }
+      }
+    },
+    {
+      "check": "sensitive_paths",
+      "url": "http://localhost:3000/.env",
+      "method": "GET",
+      "status": 404,
+      "ok": true,
+      "durationMs": 5,
+      "evidence": {
+        "path": "/.env",
+        "exposed": false,
+        "bodySnippet": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"Route not found.\"}}"
+      }
+    },
+    {
+      "check": "sensitive_paths",
+      "url": "http://localhost:3000/.git/config",
+      "method": "GET",
+      "status": 404,
+      "ok": true,
+      "durationMs": 4,
+      "evidence": {
+        "path": "/.git/config",
+        "exposed": false,
+        "bodySnippet": "{\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"Route not found.\"}}"
+      }
+    },
+    {
+      "check": "sensitive_paths",
+      "url": "http://localhost:3000/health",
+      "method": "GET",
+      "ok": false,
+      "durationMs": 43,
+      "evidence": {
+        "path": "/health"
+      },
+      "error": "fetch failed"
+    },
+    {
+      "check": "sensitive_paths",
+      "url": "http://localhost:3000/debug",
+      "method": "GET",
+      "ok": false,
+      "durationMs": 2,
+      "evidence": {
+        "path": "/debug"
+      },
+      "error": "fetch failed"
+    },
+    {
+      "check": "sensitive_paths",
+      "url": "http://localhost:3000/config.json",
+      "method": "GET",
+      "ok": false,
+      "durationMs": 3,
+      "evidence": {
+        "path": "/config.json"
+      },
+      "error": "fetch failed"
+    },
+    {
+      "check": "sensitive_paths",
+      "url": "http://localhost:3000/swagger.json",
+      "method": "GET",
+      "ok": false,
+      "durationMs": 4,
+      "evidence": {
+        "path": "/swagger.json"
+      },
+      "error": "fetch failed"
+    },
+    {
+      "check": "sensitive_paths",
+      "url": "http://localhost:3000/openapi.json",
+      "method": "GET",
+      "ok": false,
+      "durationMs": 3,
+      "evidence": {
+        "path": "/openapi.json"
+      },
+      "error": "fetch failed"
+    },
+    {
+      "check": "sensitive_paths",
+      "url": "http://localhost:3000/metrics",
+      "method": "GET",
+      "ok": false,
+      "durationMs": 2,
+      "evidence": {
+        "path": "/metrics"
+      },
+      "error": "fetch failed"
+    }
+  ],
+  "runtime_findings": [
+    {
+      "severity": "MEDIUM",
+      "cwe": "CWE-1021",
+      "file": "http://localhost:3000/",
+      "lineStart": 0,
+      "lineEnd": 0,
+      "title": "Missing Content-Security-Policy header",
+      "description": "The response does not include a Content-Security-Policy header, reducing protection against XSS and content injection.",
+      "remediation": "Add a restrictive Content-Security-Policy header appropriate for the application.",
+      "id": "D-01",
+      "reportedBy": [
+        "dynamic"
+      ],
+      "confidence": 1
+    }
+  ],
+  "gate_blocked": false,
+  "gate_reasons": []
+}

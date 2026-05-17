@@ -9,5 +9,6 @@ examples/**/reports/
 # Local env files — CLI loads .env via dotenv (src/cli.ts).
 # Never commit secrets used to authenticate to AI providers or scan targets.
 .env
+.env\ 
 .env.*
 !.env.example

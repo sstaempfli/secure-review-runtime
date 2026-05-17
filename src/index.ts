@@ -15,3 +15,5 @@ export type { JsonReportOptions } from './reporters/attack-json.js';
 export { parsePentestScannerList, runCliPentestScanners } from './pentest/cli-scanners.js';
 export { ghActionInput } from './pentest/gh-action-inputs.js';
 export { runBrowserLoginScript } from './pentest/browser-login.js';
+export { crawlWithPlaywright } from './pentest/playwright-crawler.js';
+export type { PlaywrightCrawlInput } from './pentest/playwright-crawler.js';

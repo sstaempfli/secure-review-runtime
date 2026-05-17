@@ -1,0 +1,234 @@
+{
+  "task_id": "unknown",
+  "tool": "secure-review",
+  "condition": "F-attack-ai",
+  "run": 1,
+  "timestamp": "2026-05-11T19:21:32.323Z",
+  "model_version": "openai/gpt-4o",
+  "total_findings_initial": 1,
+  "findings_by_severity_initial": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 1,
+    "INFO": 0
+  },
+  "total_findings_after_fix": 1,
+  "findings_by_severity_after_fix": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 1,
+    "INFO": 0
+  },
+  "new_findings_introduced": 0,
+  "findings_resolved": 0,
+  "resolution_rate_pct": 0,
+  "semgrep_after_fix": 0,
+  "eslint_after_fix": 0,
+  "lines_of_code_fixed": 0,
+  "review_report": "AI attack simulation against http://localhost:3000/",
+  "generation_time_seconds": 11.929,
+  "total_cost_usd": 0.017885,
+  "review_status": "ok",
+  "failed_reviewers": [],
+  "findings": [
+    {
+      "id": "A-01",
+      "severity": "LOW",
+      "file": "src/app.ts",
+      "lineStart": 34,
+      "lineEnd": 34,
+      "title": "Potential debug or configuration routes exposed",
+      "description": "The status 404 for the root URL and presence of a /health endpoint suggest unexposed debug or configuration paths.\n\nRuntime evidence: path returned HTTP 200 with body content at http://localhost:3000/health?q=secure-review-probe-h-01%3Csr%3E.",
+      "remediation": "Restrict access to health check and other debug endpoints to authenticated or internal users.",
+      "reportedBy": [
+        "attack-ai"
+      ],
+      "confidence": 1
+    }
+  ],
+  "reviewers": [
+    "attack-ai"
+  ],
+  "iterations": 0,
+  "target_url": "http://localhost:3000/",
+  "crawled_pages": [
+    {
+      "url": "http://localhost:3000/",
+      "status": 404,
+      "links": [],
+      "forms": []
+    }
+  ],
+  "hypotheses": [
+    {
+      "category": "path_exposure",
+      "severity": "LOW",
+      "title": "Potential debug or configuration routes exposed",
+      "rationale": "The status 404 for the root URL and presence of a /health endpoint suggest unexposed debug or configuration paths.",
+      "path": "/health",
+      "method": "GET",
+      "sourceFile": "src/app.ts",
+      "lineStart": 34,
+      "remediation": "Restrict access to health check and other debug endpoints to authenticated or internal users.",
+      "id": "H-01"
+    },
+    {
+      "category": "error_disclosure",
+      "severity": "MEDIUM",
+      "title": "Verbose error messages are present",
+      "rationale": "The errorHandler middleware returns detailed error messages which may disclose sensitive implementation details or environment setup.",
+      "path": "/uploads/profile-image",
+      "method": "POST",
+      "parameter": "image",
+      "sourceFile": "src/middleware/errorHandler.ts",
+      "lineStart": 24,
+      "remediation": "Return generic error messages to the user and log detailed errors internally.",
+      "id": "H-02"
+    },
+    {
+      "category": "reflected_input",
+      "severity": "HIGH",
+      "title": "User ID header could be reflected unsafely",
+      "rationale": "The x-user-id header is used in identifying users which could potentially be improperly handled or logged, leading to XSS if reflected without encoding.",
+      "path": "/uploads/profile-image",
+      "method": "POST",
+      "parameter": "x-user-id",
+      "sourceFile": "src/middleware/auth.ts",
+      "lineStart": 6,
+      "remediation": "Ensure that all inputs including headers are properly sanitized and encoded before use.",
+      "id": "H-03"
+    }
+  ],
+  "probes": [
+    {
+      "hypothesisId": "H-01",
+      "category": "path_exposure",
+      "url": "http://localhost:3000/health?q=secure-review-probe-h-01%3Csr%3E",
+      "method": "GET",
+      "status": 200,
+      "confirmed": true,
+      "durationMs": 7,
+      "evidence": {
+        "marker": "secure-review-probe-h-01<sr>",
+        "reason": "path returned HTTP 200 with body content",
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "15",
+          "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests",
+          "content-type": "application/json; charset=utf-8",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "date": "Mon, 11 May 2026 19:21:31 GMT",
+          "etag": "W/\"f-VaSQ4oDUiZblZNAEkkN+sX+q3Sg\"",
+          "keep-alive": "timeout=5",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "vary": "Origin",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0"
+        },
+        "bodySnippet": "{\"status\":\"ok\"}"
+      }
+    },
+    {
+      "hypothesisId": "H-02",
+      "category": "error_disclosure",
+      "url": "http://localhost:3000/uploads/profile-image",
+      "method": "POST",
+      "status": 401,
+      "confirmed": false,
+      "durationMs": 16,
+      "evidence": {
+        "marker": "secure-review-probe-h-02<sr>",
+        "reason": "no error disclosure pattern observed",
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "83",
+          "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests",
+          "content-type": "application/json; charset=utf-8",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "date": "Mon, 11 May 2026 19:21:31 GMT",
+          "etag": "W/\"53-Hfnmyk2DZoRZj3GDtdr5Awxhf+A\"",
+          "keep-alive": "timeout=5",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "vary": "Origin",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0"
+        },
+        "bodySnippet": "{\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"A valid x-user-id header is required.\"}}"
+      }
+    },
+    {
+      "hypothesisId": "H-03",
+      "category": "reflected_input",
+      "url": "http://localhost:3000/uploads/profile-image",
+      "method": "POST",
+      "status": 401,
+      "confirmed": false,
+      "durationMs": 7,
+      "evidence": {
+        "marker": "secure-review-probe-h-03<sr>",
+        "reason": "marker not reflected unescaped",
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "content-length": "83",
+          "content-security-policy": "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests",
+          "content-type": "application/json; charset=utf-8",
+          "cross-origin-opener-policy": "same-origin",
+          "cross-origin-resource-policy": "same-origin",
+          "date": "Mon, 11 May 2026 19:21:32 GMT",
+          "etag": "W/\"53-Hfnmyk2DZoRZj3GDtdr5Awxhf+A\"",
+          "keep-alive": "timeout=5",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "vary": "Origin",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0"
+        },
+        "bodySnippet": "{\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"A valid x-user-id header is required.\"}}"
+      }
+    }
+  ],
+  "runtime_findings": [
+    {
+      "id": "A-01",
+      "severity": "LOW",
+      "file": "src/app.ts",
+      "lineStart": 34,
+      "lineEnd": 34,
+      "title": "Potential debug or configuration routes exposed",
+      "description": "The status 404 for the root URL and presence of a /health endpoint suggest unexposed debug or configuration paths.\n\nRuntime evidence: path returned HTTP 200 with body content at http://localhost:3000/health?q=secure-review-probe-h-01%3Csr%3E.",
+      "remediation": "Restrict access to health check and other debug endpoints to authenticated or internal users.",
+      "reportedBy": [
+        "attack-ai"
+      ],
+      "confidence": 1
+    }
+  ],
+  "gate_blocked": false,
+  "gate_reasons": [],
+  "limits": {
+    "maxRequests": 50,
+    "maxCrawlPages": 20,
+    "rateLimitPerSecond": 2
+  }
+}
