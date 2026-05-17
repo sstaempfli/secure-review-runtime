@@ -4,6 +4,42 @@ All notable changes to `secure-review-runtime` are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+Runtime browser crawling — addresses the May-13 review feedback that a
+`curl`/`fetch` crawler cannot get past a login page or render a JS app.
+
+### Added
+- **`--playwright` is now reachable from the GitHub Action and
+  `pr-runtime`**, not just the local `attack-ai` CLI. New `playwright`
+  Action input, `--playwright` flag on `pr-runtime`, and
+  `INPUT_PLAYWRIGHT` → `--playwright` argv-shim translation (with test
+  coverage for truthy/falsy/unset).
+- **`playwright` declared as an optional peer dependency**
+  (`peerDependenciesMeta.playwright.optional`) so installs never pull
+  Chromium implicitly, and tooling knows the supported version range.
+- **README: "Crawling past login" + "Limitations & roadmap" sections** —
+  documents the `--playwright` + `--browser-login-script` flow and
+  frames the `curl` → real-browser → agentic progression honestly
+  (Playwright MCP cited as emerging prior art).
+- **`examples/vulnerable-target` gained a JS-rendered + login-gated
+  section** (`/app`, `/api/nav`, `/dashboard`, `/admin/export`) plus a
+  working `login.mjs` browser-login script and an `attack-skill.md`, so
+  the Playwright advantage is demonstrable end-to-end, not just
+  described. Verified with real runs: the fetch crawler sees an empty
+  shell; `--playwright` captures the `/api/nav` XHR; without the login
+  script the crawl is bounced to `/login`; with `./login.mjs` it
+  reaches `/dashboard` and `/admin/export`. The weak demo cookie is
+  scoped to `/` so it cannot clobber the injected session mid-crawl;
+  the original 9 deterministic `attack` findings on `/` are unchanged.
+
+### Fixed
+- **`npm run typecheck` was broken** by the new `playwright-crawler.ts`:
+  `tsc` tried to resolve the optional, undeclared `playwright` module.
+  The dynamic `import()` specifier is now held in a variable so the
+  type-checker leaves the optional peer alone; runtime behaviour
+  (clear install hint when absent) is unchanged.
+
 ## [1.1.1] — 2026-05-06
 
 (Same campaign as the original 2026-05-05 changelog below; absorbed three

@@ -44,6 +44,10 @@ inputs:
     description: 'Opt in to live runtime probing on every PR. Without this (or `dynamic.enabled: true` in your config), `attack` / `attack-ai` modes are skipped with a warning. This guards against a stale `dynamic.target_url` silently firing probes at a third-party host.'
     required: false
     default: 'false'
+  playwright:
+    description: '`attack-ai` only: drive a real Chromium browser (Playwright) instead of the fetch-based crawler. Renders JavaScript, discovers SPA routes, intercepts XHR/fetch calls, and — combined with `browser-login-script` — probes past login pages. Requires `playwright` installed on the runner (`npm i -D playwright && npx playwright install chromium`). No effect in `attack` mode.'
+    required: false
+    default: 'false'
 runs:
   using: 'node20'
   main: 'dist-action/index.js'

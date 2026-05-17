@@ -54,6 +54,14 @@ interface AttackAiModeInput {
     attackerSkillPath?: string;
     /** Merged over `dynamic.auth_headers` for crawl, healthcheck, and probes. */
     authHeaders?: Record<string, string>;
+    /**
+     * Use Playwright (real Chromium) instead of the fetch-based crawler.
+     * Requires `playwright` to be installed as a dev/peer dependency.
+     * Enables JS rendering, SPA route discovery, and XHR/fetch interception.
+     * Auth cookies from `--browser-login-script` are injected into the browser
+     * context so the crawler operates as an authenticated user past login pages.
+     */
+    usePlaywright?: boolean;
 }
 interface AttackAiPage {
     url: string;
@@ -61,13 +69,19 @@ interface AttackAiPage {
     title?: string;
     links: string[];
     forms: AttackAiForm[];
+    /**
+     * XHR/fetch paths observed during rendering (Playwright mode only).
+     * These are API endpoints the page calls at runtime — invisible to the
+     * fetch-based crawler and high-value targets for idor and auth_bypass probes.
+     */
+    apiEndpoints?: string[];
 }
 interface AttackAiForm {
     action: string;
     method: 'GET' | 'POST';
     fields: string[];
 }
-type AttackAiProbeCategory = 'reflected_input' | 'error_disclosure' | 'open_redirect' | 'path_exposure';
+type AttackAiProbeCategory = 'reflected_input' | 'error_disclosure' | 'open_redirect' | 'path_exposure' | 'idor' | 'auth_bypass';
 interface AttackAiHypothesis {
     id: string;
     category: AttackAiProbeCategory;
@@ -168,4 +182,28 @@ interface BrowserLoginHookResult {
 /** Run a repo-local script (`node`) that prints one line of JSON `{ "headers": { "Cookie": "..." } }`. */
 declare function runBrowserLoginScript(scriptPath: string, cwd: string, timeoutMs?: number): BrowserLoginHookResult;
 
-export { type AttackAiForm, type AttackAiHypothesis, type AttackAiModeInput, type AttackAiModeOutput, type AttackAiPage, type AttackAiProbeResult, type AttackCheckResult, type AttackModeInput, type AttackModeOutput, type JsonReportOptions, ghActionInput, mergeAttackerRef, parsePentestScannerList, renderAttackAiEvidence, renderAttackAiReport, renderAttackEvidence, renderAttackReport, runAttackAiMode, runAttackMode, runBrowserLoginScript, runCliPentestScanners };
+interface PlaywrightCrawlInput {
+    targetUrl: string;
+    maxPages: number;
+    timeoutMs: number;
+    authHeaders?: Record<string, string>;
+}
+/**
+ * Playwright-based crawler that replaces the fetch-based `crawlSameOrigin` when
+ * `--playwright` is passed. Addresses the core limitation Ilya raised: the fetch
+ * crawler cannot render JavaScript, discover SPA routes, or get past login pages.
+ *
+ * What this adds over the fetch crawler:
+ * - Full Chromium rendering — React/Vue/Angular routes are navigable
+ * - Auth cookies from `--browser-login-script` are injected into the browser
+ *   context so the crawler operates as an authenticated user past login pages
+ * - XHR/fetch interception: API endpoints the page calls at runtime are recorded
+ *   as `apiEndpoints` on each page, giving the LLM planner extra attack surface
+ *   (IDOR targets, auth-protected endpoints) that are invisible to curl/fetch
+ *
+ * Playwright is an optional peer. A clear install message is thrown if it is
+ * absent rather than an opaque module-not-found crash.
+ */
+declare function crawlWithPlaywright(input: PlaywrightCrawlInput): Promise<AttackAiPage[]>;
+
+export { type AttackAiForm, type AttackAiHypothesis, type AttackAiModeInput, type AttackAiModeOutput, type AttackAiPage, type AttackAiProbeResult, type AttackCheckResult, type AttackModeInput, type AttackModeOutput, type JsonReportOptions, type PlaywrightCrawlInput, crawlWithPlaywright, ghActionInput, mergeAttackerRef, parsePentestScannerList, renderAttackAiEvidence, renderAttackAiReport, renderAttackEvidence, renderAttackReport, runAttackAiMode, runAttackMode, runBrowserLoginScript, runCliPentestScanners };

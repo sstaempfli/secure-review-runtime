@@ -696,6 +696,13 @@ async function main(): Promise<void> {
       'opt in to live runtime probing on every PR (overrides config dynamic.enabled=false). Required for attack / attack-ai modes when dynamic.enabled is not true.',
       false,
     )
+    .option(
+      '--playwright',
+      'attack-ai only: drive a real Chromium browser (Playwright) instead of the fetch crawler — ' +
+        'renders JavaScript, discovers SPA routes, intercepts XHR/fetch, and (with --browser-login-script) ' +
+        'probes past login pages. Requires playwright installed on the runner. No effect in attack mode.',
+      false,
+    )
     .action(
       async (
         opts: {
@@ -708,6 +715,7 @@ async function main(): Promise<void> {
           browserLoginScript?: string;
           runtimeTimeoutSeconds?: number;
           enableRuntimeAttacks: boolean;
+          playwright: boolean;
         },
       ) => {
         try {
@@ -828,6 +836,8 @@ async function main(): Promise<void> {
             aggregateFindings.push(...attackOut.findings);
             body += renderAttackReport(attackOut);
           } else {
+            const usePlaywright =
+              opts.playwright === true || parseBooleanFlag(ghActionInput('playwright'));
             const aiOut = await runAttackAiMode({
               root: process.cwd(),
               config,
@@ -836,6 +846,7 @@ async function main(): Promise<void> {
               targetUrl,
               timeoutSeconds: attackProbeSec,
               authHeaders: authHeaders ?? undefined,
+              usePlaywright,
             });
             modeGateBlocked = aiOut.gateBlocked;
             aggregateFindings.push(...aiOut.findings);
@@ -909,6 +920,9 @@ export function buildGhActionArgv(
     argv.push('--runtime-timeout-seconds', env.INPUT_RUNTIME_TIMEOUT_SECONDS);
   if (parseBooleanFlag(env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
     argv.push('--enable-runtime-attacks');
+  }
+  if (parseBooleanFlag(env.INPUT_PLAYWRIGHT)) {
+    argv.push('--playwright');
   }
   return argv;
 }

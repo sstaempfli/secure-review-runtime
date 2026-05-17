@@ -92,6 +92,22 @@ describe('buildGhActionArgv', () => {
     ).not.toContain('--enable-runtime-attacks');
   });
 
+  it('appends --playwright when INPUT_PLAYWRIGHT is truthy', () => {
+    for (const v of ['true', '1', 'yes']) {
+      expect(
+        buildGhActionArgv(baseArgv, { GITHUB_ACTIONS: 'true', INPUT_PLAYWRIGHT: v }),
+      ).toContain('--playwright');
+    }
+  });
+
+  it('does NOT append --playwright for falsy / unset values', () => {
+    for (const v of ['false', '', undefined]) {
+      expect(
+        buildGhActionArgv(baseArgv, { GITHUB_ACTIONS: 'true', INPUT_PLAYWRIGHT: v }),
+      ).not.toContain('--playwright');
+    }
+  });
+
   it('appends --autofix when INPUT_MODE=fix (deprecated path, but still wired)', () => {
     expect(
       buildGhActionArgv(baseArgv, {

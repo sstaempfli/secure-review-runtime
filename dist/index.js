@@ -1,4 +1,5 @@
 import {
+  crawlWithPlaywright,
   ghActionInput,
   mergeAttackerRef,
   parsePentestScannerList,
@@ -10,8 +11,9 @@ import {
   runAttackMode,
   runBrowserLoginScript,
   runCliPentestScanners
-} from "./chunk-O5BYKZUT.js";
+} from "./chunk-WKVCRHQI.js";
 export {
+  crawlWithPlaywright,
   ghActionInput,
   mergeAttackerRef,
   parsePentestScannerList,

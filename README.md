@@ -21,7 +21,11 @@ a live URL:
 - **`attack-ai`** — an LLM crawls a small same-origin sample and plans
   targeted probes (reflected XSS, IDOR-style URL mutation, etc.) with a
   capped request budget. Costs cents per run, requires a provider key.
-  **Use this for explicit security passes, not on every PR.**
+  **Use this for explicit security passes, not on every PR.** Add
+  `--playwright` to crawl with a real headless Chromium instead of
+  `fetch` — this renders JavaScript SPAs, discovers client-side routes,
+  intercepts XHR/fetch API calls, and (with `--browser-login-script`)
+  reaches pages **behind a login**. See *Crawling past login* below.
 - **`pr-runtime`** — wraps either of the above as a GitHub Action that
   posts a Markdown comment on a PR.
 - **External scanners** — optional pluggable wrappers around OWASP ZAP
@@ -80,7 +84,7 @@ report and JSON findings land under `./reports/` next to the config.
 | Mode         | Cost                 | Speed      | LLM keys?    | When to use                                                                 |
 |--------------|----------------------|------------|--------------|-----------------------------------------------------------------------------|
 | `attack`     | $0                   | seconds    | No           | Every PR. Catches the OWASP-easy stuff: headers, cookies, CORS, sensitive paths. |
-| `attack-ai`  | depends on planner† | 30–120s    | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. |
+| `attack-ai`  | depends on planner† | 30–120s    | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. Add `--playwright` for JS/SPA + behind-login crawling. |
 | `pr-runtime` | as above             | as above   | as above     | The GitHub Action wrapper around `attack` / `attack-ai`. Posts a PR comment. |
 | `attack` + `--pentest-scanners zap-baseline,nuclei` | $0 (binaries are local) | 5–15 min | No | Pre-release / nightly. Deeper coverage from external scanners. |
 
@@ -164,6 +168,61 @@ External scanners use the same pattern: `buildScannerEnv` extends the
 common base with `DOCKER_*` and `NUCLEI_*` prefixes, so the docker CLI
 and `nuclei` see their normal config keys without you having to wrap
 them in `SECURE_REVIEW_FORWARD_`.
+
+### Crawling past login (`--playwright`)
+
+The default `fetch`-based crawler is fast and dependency-free, but it
+cannot render JavaScript, follow client-side routes, or get past a real
+login form (it sees the login HTML and stops). For SPAs, JS-gated apps,
+or anything behind authentication, pass `--playwright` to `attack-ai`:
+
+```bash
+npm install --save-dev playwright
+npx playwright install chromium
+
+npx secure-review-runtime attack-ai . \
+  --target-url http://localhost:3000 \
+  --playwright \
+  --browser-login-script ./login.mjs   # cookies → injected into the browser
+```
+
+What `--playwright` changes:
+
+- **Real Chromium rendering** — React/Vue/Angular routes become
+  navigable instead of returning an empty shell.
+- **XHR/fetch interception** — API endpoints the page calls at runtime
+  are recorded as `apiEndpoints` and handed to the planner as extra
+  attack surface (high-signal IDOR / auth-bypass targets that are
+  invisible to a `curl`-style crawl).
+- **Authenticated crawl** — `Cookie` headers from
+  `--browser-login-script` are loaded into the browser context, so the
+  crawler operates as a logged-in user instead of bouncing off the
+  login page.
+
+`--playwright` is `attack-ai`-only and also available on the GitHub
+Action (`playwright: true`) and `pr-runtime`. `playwright` is an
+**optional peer dependency** — if it isn't installed, the run fails
+fast with an install hint instead of an opaque crash.
+
+## Limitations & roadmap
+
+This package is a deliberate **proof of concept** for runtime probing,
+not a finished pen-testing product. Being honest about where it stops:
+
+- **`attack` / `attack-ai` are shallow by design.** They check the
+  OWASP-easy surface (headers, cookies, CORS, sensitive paths) and a
+  small set of LLM-planned, non-destructive same-origin probes. They
+  are not a substitute for a real penetration test.
+- **The progression is `curl` → real browser → agentic.** The
+  `fetch` crawler cannot pass a login page or render a JS app; that is
+  what `--playwright` addresses. The *next* step — an agent that
+  navigates, reasons, and adapts its attack interactively — is
+  intentionally out of scope here.
+- **Prior art exists.** Tools like **Playwright MCP** already give an
+  LLM agent a driveable browser; that approach is emerging but not yet
+  mainstream. A future iteration is either a plain-vanilla agentic
+  build or an aggregator that orchestrates such tools — tracked as
+  roadmap, not promised here.
 
 ## CLI
 

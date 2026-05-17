@@ -281,6 +281,139 @@ function sensitivePathSeverity(path) {
   return "MEDIUM";
 }
 
+// src/pentest/playwright-crawler.ts
+import { log as log2 } from "secure-review";
+async function crawlWithPlaywright(input) {
+  let playwright;
+  try {
+    const specifier = "playwright";
+    playwright = await import(specifier);
+  } catch {
+    throw new Error(
+      "Playwright is not installed.\nInstall it with:\n  npm install --save-dev playwright\n  npx playwright install chromium\nThen retry with --playwright."
+    );
+  }
+  const origin = new URL(input.targetUrl).origin;
+  log2.info("Playwright crawler \u2014 launching Chromium (headless)");
+  const browser = await playwright.chromium.launch({ headless: true });
+  try {
+    const extraHTTPHeaders = {};
+    const cookiesToAdd = [];
+    for (const [name, value] of Object.entries(input.authHeaders ?? {})) {
+      if (name.toLowerCase() === "cookie") {
+        cookiesToAdd.push(...parseCookieHeader(value, new URL(input.targetUrl)));
+      } else {
+        extraHTTPHeaders[name] = value;
+      }
+    }
+    const context = await browser.newContext({
+      ...Object.keys(extraHTTPHeaders).length > 0 ? { extraHTTPHeaders } : {},
+      ignoreHTTPSErrors: true
+    });
+    if (cookiesToAdd.length > 0) {
+      await context.addCookies(cookiesToAdd);
+      log2.info(`  Applied ${cookiesToAdd.length} auth cookie${cookiesToAdd.length === 1 ? "" : "s"} to browser context`);
+    }
+    const pages = [];
+    const visited = /* @__PURE__ */ new Set();
+    const queue = [input.targetUrl];
+    while (queue.length > 0 && pages.length < input.maxPages) {
+      const url = queue.shift();
+      const normalized = normalizeForVisit(url);
+      if (visited.has(normalized)) continue;
+      visited.add(normalized);
+      const pw = await context.newPage();
+      const apiEndpoints = /* @__PURE__ */ new Set();
+      pw.on("request", (req) => {
+        try {
+          const u = new URL(req.url());
+          if (u.origin === origin && (req.resourceType() === "fetch" || req.resourceType() === "xhr")) {
+            apiEndpoints.add(u.pathname + u.search);
+          }
+        } catch {
+        }
+      });
+      try {
+        const response = await pw.goto(url, { timeout: input.timeoutMs, waitUntil: "networkidle" }).catch(() => null);
+        const finalUrl = pw.url();
+        const status = response?.status() ?? 0;
+        const title = await pw.title().catch(() => void 0);
+        const links = await pw.$$eval(
+          "a[href]",
+          (anchors) => anchors.map((a) => a.href).filter(Boolean)
+        ).catch(() => []);
+        const forms = await pw.$$eval(
+          "form",
+          (formEls) => formEls.map((form) => {
+            const f = form;
+            return {
+              action: f.action,
+              method: f.method?.toUpperCase() === "POST" ? "POST" : "GET",
+              fields: [...form.querySelectorAll("[name]")].map((el) => el.getAttribute("name") ?? "").filter(Boolean)
+            };
+          })
+        ).catch(() => []);
+        const sameOriginLinks2 = [];
+        for (const link of links) {
+          try {
+            const u = new URL(link);
+            if (u.origin !== origin) continue;
+            u.hash = "";
+            const clean = u.toString();
+            const norm = normalizeForVisit(clean);
+            if (!visited.has(norm) && !sameOriginLinks2.includes(clean)) {
+              sameOriginLinks2.push(clean);
+              if (pages.length + queue.length < input.maxPages) queue.push(clean);
+            }
+          } catch {
+          }
+        }
+        pages.push({
+          url: finalUrl,
+          status,
+          title: title || void 0,
+          links: sameOriginLinks2,
+          forms,
+          ...apiEndpoints.size > 0 ? { apiEndpoints: [...apiEndpoints] } : {}
+        });
+        log2.info(
+          `  Crawled [${status}] ${finalUrl}${apiEndpoints.size > 0 ? ` (+${apiEndpoints.size} XHR/fetch)` : ""}`
+        );
+      } catch (err) {
+        log2.info(`  Skipped ${url} \u2014 ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        await pw.close().catch(() => {
+        });
+      }
+    }
+    await context.close().catch(() => {
+    });
+    return pages;
+  } finally {
+    await browser.close().catch(() => {
+    });
+  }
+}
+function normalizeForVisit(url) {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return u.toString().toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+function parseCookieHeader(cookieHeader, targetUrl) {
+  return cookieHeader.split(";").map((part) => {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx <= 0) return null;
+    const name = part.slice(0, eqIdx).trim();
+    const value = part.slice(eqIdx + 1).trim();
+    if (!name) return null;
+    return { name, value, domain: targetUrl.hostname, path: "/" };
+  }).filter((c) => c !== null);
+}
+
 // src/modes/attack-ai.ts
 import { z } from "zod";
 import { getAdapter } from "secure-review";
@@ -288,16 +421,17 @@ import { loadSkill, resolveSkillPath } from "secure-review";
 import { extractJson } from "secure-review";
 import { severityBreakdown as severityBreakdown2 } from "secure-review";
 import { readSourceTree, serializeCodeContext } from "secure-review";
-import { log as log2 } from "secure-review";
+import { log as log3 } from "secure-review";
 import { mergeAuthHeaders as mergeAuthHeaders2 } from "secure-review";
 var MARKER_PREFIX = "secure-review-probe";
 var UNTRUSTED_REDIRECT = "https://secure-review.invalid/redirect-target";
 var ATTACKER_NAME = "attack-ai";
+var IDOR_PROBE_ID = "9007199";
 var optionalStringFromModel = z.preprocess((value) => value === null ? void 0 : value, z.string().optional());
 var optionalNumberFromModel = z.preprocess((value) => value === null ? void 0 : value, z.number().int().min(0).optional());
 var RawHypothesisSchema = z.object({
   id: optionalStringFromModel,
-  category: z.enum(["reflected_input", "error_disclosure", "open_redirect", "path_exposure"]),
+  category: z.enum(["reflected_input", "error_disclosure", "open_redirect", "path_exposure", "idor", "auth_bypass"]),
   severity: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]).default("MEDIUM"),
   title: z.string().min(1),
   rationale: z.string().min(1),
@@ -319,8 +453,8 @@ async function runAttackAiMode(input) {
   const rateLimitPerSecond = input.rateLimitPerSecond ?? dynamic.rate_limit_per_second;
   const budget = new RequestBudget(maxRequests, rateLimitPerSecond);
   const authHeaders = mergeAuthHeaders2(dynamic.auth_headers, input.authHeaders);
-  log2.header(`AI attack mode \u2014 ${targetUrl}`);
-  log2.info(
+  log3.header(`AI attack mode \u2014 ${targetUrl}`);
+  log3.info(
     `Scope: same-origin only \xB7 max ${maxRequests} requests \xB7 crawl ${maxCrawlPages} page${maxCrawlPages === 1 ? "" : "s"}`
   );
   if (dynamic.healthcheck_url) {
@@ -329,8 +463,8 @@ async function runAttackAiMode(input) {
       throw new Error(`Healthcheck failed for ${dynamic.healthcheck_url}: ${health.error ?? `HTTP ${health.response?.status}`}`);
     }
   }
-  const pages = await crawlSameOrigin(targetUrl, timeoutMs, maxCrawlPages, budget, authHeaders);
-  log2.info(`Crawled ${pages.length} page${pages.length === 1 ? "" : "s"}`);
+  const pages = input.usePlaywright ? await crawlWithPlaywright({ targetUrl, maxPages: maxCrawlPages, timeoutMs, authHeaders }) : await crawlSameOrigin(targetUrl, timeoutMs, maxCrawlPages, budget, authHeaders);
+  log3.info(`Crawled ${pages.length} page${pages.length === 1 ? "" : "s"}${input.usePlaywright ? " (Playwright)" : ""}`);
   if (pages.length === 0) {
     throw new Error(
       `AI attack target was not reachable at ${targetUrl}. No pages were crawled; verify the app is running and the URL/port are correct.`
@@ -354,7 +488,7 @@ async function runAttackAiMode(input) {
     );
   }
   const hypotheses = sanitizeHypotheses(planned.hypotheses, targetUrl).slice(0, remainingProbeSlots(budget));
-  log2.info(`Model proposed ${planned.hypotheses.length}; executing ${hypotheses.length} safe same-origin probe${hypotheses.length === 1 ? "" : "s"}`);
+  log3.info(`Model proposed ${planned.hypotheses.length}; executing ${hypotheses.length} safe same-origin probe${hypotheses.length === 1 ? "" : "s"}`);
   const probes = [];
   const findings = [];
   let nextId = 1;
@@ -412,23 +546,33 @@ Return JSON only:
 {
   "hypotheses": [
     {
-      "category": "reflected_input" | "error_disclosure" | "open_redirect" | "path_exposure",
+      "category": "reflected_input" | "error_disclosure" | "open_redirect" | "path_exposure" | "idor" | "auth_bypass",
       "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO",
       "title": "short finding title if confirmed",
       "rationale": "why this is plausible from the crawl/source",
       "path": "/same-origin-path",
       "method": "GET" | "POST",
-      "parameter": "single parameter name for reflected_input/error_disclosure/open_redirect",
+      "parameter": "single parameter name for reflected_input/error_disclosure/open_redirect (omit for idor, auth_bypass, path_exposure)",
       "sourceFile": "optional relative source file",
       "lineStart": 0,
       "remediation": "how the writer should fix it"
     }
   ]
-}`,
+}
+
+Category guidance:
+- reflected_input: Test a query/form parameter for unescaped reflection in the response body (XSS indicator). Requires "parameter".
+- error_disclosure: Submit garbage to a parameter to elicit stack traces or DB error messages. Requires "parameter".
+- open_redirect: Test a redirect parameter for open-redirect to an untrusted URL. Requires "parameter".
+- path_exposure: Check whether a sensitive path (e.g. /admin, /debug, /.git) is accessible without auth.
+- idor (Broken Object Level Authorization, A01:2025): Look for URL paths with numeric or UUID identifiers (e.g. /api/orders/42, /api/users/5/profile). The probe replaces the numeric segment with a different ID to test whether the server enforces per-resource ownership. No "parameter" field needed \u2014 set "path" to a URL that contains the numeric ID. Propose HIGH or CRITICAL severity; this is the class of bug most likely to expose another user's data.
+- auth_bypass: Identify endpoints that should require authentication (e.g. /api/profile, /api/admin, /dashboard). The probe is sent without any session token to test whether the authentication gate is enforced. No "parameter" field needed. Propose HIGH severity.`,
     user: `Target: ${input.targetUrl}
 
 Crawled surface:
 ${JSON.stringify(input.pages, null, 2)}
+
+Note: pages may include an \`apiEndpoints\` array of XHR/fetch paths observed during rendering (Playwright mode). These are runtime API calls invisible to static analysis \u2014 prioritise them for idor and auth_bypass probes.
 
 Source context:
 ${serializeCodeContext(input.files, 8e4)}
@@ -473,7 +617,8 @@ async function executeHypothesis(hypothesis, targetUrl, timeoutMs, budget, authH
   const started = Date.now();
   try {
     const request = buildProbeRequest(hypothesis, targetUrl, marker);
-    const probed = await safeProbe(request.url, request.method, timeoutMs, budget, request.body, authHeaders);
+    const probeAuthHeaders = hypothesis.category === "auth_bypass" ? void 0 : authHeaders;
+    const probed = await safeProbe(request.url, request.method, timeoutMs, budget, request.body, probeAuthHeaders);
     if (!probed.response) {
       return {
         hypothesisId: hypothesis.id,
@@ -517,6 +662,13 @@ async function executeHypothesis(hypothesis, targetUrl, timeoutMs, budget, authH
   }
 }
 function buildProbeRequest(hypothesis, targetUrl, marker) {
+  if (hypothesis.category === "idor") {
+    const mutatedPath = mutateIdorPath(hypothesis.path);
+    return { url: new URL(mutatedPath, targetUrl).toString(), method: hypothesis.method };
+  }
+  if (hypothesis.category === "auth_bypass") {
+    return { url: new URL(hypothesis.path, targetUrl).toString(), method: hypothesis.method };
+  }
   const url = new URL(hypothesis.path, targetUrl);
   const parameter = hypothesis.parameter ?? defaultParameter(hypothesis.category);
   const value = hypothesis.category === "open_redirect" ? UNTRUSTED_REDIRECT : marker;
@@ -529,6 +681,17 @@ function buildProbeRequest(hypothesis, targetUrl, marker) {
   }
   url.searchParams.set(parameter, value);
   return { url: url.toString(), method: "GET" };
+}
+function mutateIdorPath(path) {
+  const parts = path.split("/");
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const segment = parts[i];
+    if (segment !== void 0 && /^\d+$/.test(segment) && segment !== IDOR_PROBE_ID) {
+      parts[i] = IDOR_PROBE_ID;
+      return parts.join("/");
+    }
+  }
+  return path;
 }
 async function safeProbe(url, method, timeoutMs, budget, body, authHeaders) {
   if (!await budget.tryTake()) return { error: "request budget exhausted" };
@@ -585,6 +748,21 @@ function confirmHypothesis(hypothesis, res, marker) {
       reason: confirmed ? `redirected to untrusted location ${UNTRUSTED_REDIRECT}` : "no redirect to untrusted location"
     };
   }
+  if (hypothesis.category === "idor") {
+    const fallback2 = isLikelySpaFallback2(hypothesis.path, res);
+    const confirmed = res.status >= 200 && res.status < 300 && body.trim().length > 0 && !fallback2;
+    return {
+      confirmed,
+      reason: confirmed ? `IDOR probe returned HTTP ${res.status} with content \u2014 server may not enforce object-level ownership (A01:2025)` : fallback2 ? "response appears to be a generic SPA fallback document" : `probe returned HTTP ${res.status} \u2014 resource not accessible with mutated ID`
+    };
+  }
+  if (hypothesis.category === "auth_bypass") {
+    const confirmed = res.status >= 200 && res.status < 300;
+    return {
+      confirmed,
+      reason: confirmed ? `unauthenticated request returned HTTP ${res.status} \u2014 endpoint may not enforce authentication` : `unauthenticated request was correctly rejected with HTTP ${res.status}`
+    };
+  }
   const fallback = isLikelySpaFallback2(hypothesis.path, res);
   const exposed = res.status >= 200 && res.status < 300 && body.trim().length > 0 && !fallback;
   return {
@@ -620,8 +798,10 @@ function sanitizeHypotheses(hypotheses, targetUrl) {
       if (!["http:", "https:"].includes(url.protocol)) continue;
       if (!h.path.startsWith("/") && !h.path.startsWith(origin)) continue;
       const parameter = h.parameter?.trim();
-      if (h.category !== "path_exposure" && !parameter) continue;
+      const parameterOptional = h.category === "path_exposure" || h.category === "idor" || h.category === "auth_bypass";
+      if (!parameterOptional && !parameter) continue;
       if (parameter && !/^[A-Za-z0-9_.:-]{1,80}$/.test(parameter)) continue;
+      if (h.category === "idor" && mutateIdorPath(h.path) === h.path) continue;
       const cleanPath = `${url.pathname}${url.search}`;
       const key = `${h.category}:${h.method}:${cleanPath}:${parameter ?? ""}`;
       if (seen.has(key)) continue;
@@ -1342,7 +1522,7 @@ function ghActionInput(name) {
 import { execFileSync } from "child_process";
 import { statSync } from "fs";
 import { isAbsolute, resolve } from "path";
-import { log as log3 } from "secure-review";
+import { log as log4 } from "secure-review";
 var DEFAULT_TIMEOUT_MS = 12e4;
 function validateScriptPath(rawPath, cwd) {
   const trimmed = rawPath.trim();
@@ -1412,7 +1592,7 @@ function runBrowserLoginScript(scriptPath, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) 
       }
     }
     if (dropped.length > 0) {
-      log3.warn(
+      log4.warn(
         `browser-login script: ${dropped.length} header value${dropped.length === 1 ? "" : "s"} dropped because the value was not a string or the key was empty (${dropped.slice(0, 5).join(", ")}${dropped.length > 5 ? ", \u2026" : ""}). HTTP headers must be string-typed.`
       );
     }
@@ -1425,6 +1605,7 @@ function runBrowserLoginScript(scriptPath, cwd, timeoutMs = DEFAULT_TIMEOUT_MS) 
 
 export {
   runAttackMode,
+  crawlWithPlaywright,
   runAttackAiMode,
   mergeAttackerRef,
   renderAttackReport,
@@ -1436,4 +1617,4 @@ export {
   ghActionInput,
   runBrowserLoginScript
 };
-//# sourceMappingURL=chunk-O5BYKZUT.js.map
+//# sourceMappingURL=chunk-WKVCRHQI.js.map

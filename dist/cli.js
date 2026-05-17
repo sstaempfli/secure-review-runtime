@@ -10,7 +10,7 @@ import {
   runAttackMode,
   runBrowserLoginScript,
   runCliPentestScanners
-} from "./chunk-O5BYKZUT.js";
+} from "./chunk-WKVCRHQI.js";
 
 // src/cli.ts
 import { readFile } from "fs/promises";
@@ -467,6 +467,10 @@ ${appendix}` : "")
     "--enable-runtime-attacks",
     "opt in to live runtime probing (overrides config dynamic.enabled=false). Required when dynamic.enabled is not true.",
     false
+  ).option(
+    "--playwright",
+    "use a real Chromium browser (via Playwright) instead of the fetch-based crawler. Renders JavaScript, discovers SPA routes, and intercepts XHR/fetch calls. Required to probe past login pages. Requires: npm install --save-dev playwright && npx playwright install chromium",
+    false
   ).option("--task-id <id>", "task identifier for evidence JSON", "unknown").option("--run <n>", "run number", "1").action(
     async (path, opts) => {
       try {
@@ -503,7 +507,8 @@ ${appendix}` : "")
           attackerProvider: opts.attackProvider,
           attackerModel: opts.attackModel,
           attackerSkillPath: opts.attackSkill,
-          authHeaders: authHeaders ?? void 0
+          authHeaders: authHeaders ?? void 0,
+          usePlaywright: opts.playwright
         });
         const stamp = timestamp();
         const mdPath = outputPath(
@@ -599,6 +604,10 @@ ${appendix}` : "")
   ).option(
     "--enable-runtime-attacks",
     "opt in to live runtime probing on every PR (overrides config dynamic.enabled=false). Required for attack / attack-ai modes when dynamic.enabled is not true.",
+    false
+  ).option(
+    "--playwright",
+    "attack-ai only: drive a real Chromium browser (Playwright) instead of the fetch crawler \u2014 renders JavaScript, discovers SPA routes, intercepts XHR/fetch, and (with --browser-login-script) probes past login pages. Requires playwright installed on the runner. No effect in attack mode.",
     false
   ).action(
     async (opts) => {
@@ -696,6 +705,7 @@ ${appendix}` : "")
           aggregateFindings.push(...attackOut.findings);
           body += renderAttackReport(attackOut);
         } else {
+          const usePlaywright = opts.playwright === true || parseBooleanFlag(ghActionInput("playwright"));
           const aiOut = await runAttackAiMode({
             root: process.cwd(),
             config,
@@ -703,7 +713,8 @@ ${appendix}` : "")
             env,
             targetUrl,
             timeoutSeconds: attackProbeSec,
-            authHeaders: authHeaders ?? void 0
+            authHeaders: authHeaders ?? void 0,
+            usePlaywright
           });
           modeGateBlocked = aiOut.gateBlocked;
           aggregateFindings.push(...aiOut.findings);
@@ -758,6 +769,9 @@ function buildGhActionArgv(inputArgv, env) {
     argv.push("--runtime-timeout-seconds", env.INPUT_RUNTIME_TIMEOUT_SECONDS);
   if (parseBooleanFlag(env.INPUT_ENABLE_RUNTIME_ATTACKS)) {
     argv.push("--enable-runtime-attacks");
+  }
+  if (parseBooleanFlag(env.INPUT_PLAYWRIGHT)) {
+    argv.push("--playwright");
   }
   return argv;
 }
