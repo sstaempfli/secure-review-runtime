@@ -83,8 +83,8 @@ report and JSON findings land under `./reports/` next to the config.
 
 | Mode         | Cost                 | Speed      | LLM keys?    | When to use                                                                 |
 |--------------|----------------------|------------|--------------|-----------------------------------------------------------------------------|
-| `attack`     | $0                   | seconds    | No           | Every PR. Catches the OWASP-easy stuff: headers, cookies, CORS, sensitive paths. |
-| `attack-ai`  | depends on planner† | 30–120s    | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. Add `--playwright` for JS/SPA + behind-login crawling. |
+| `attack`     | $0                   | <0.1s      | No           | Every PR. Catches the OWASP-easy stuff: headers, cookies, CORS, sensitive paths. |
+| `attack-ai`  | ≈$0.001–0.02†        | ~10s       | Yes          | Periodic security passes. LLM-planned probes for XSS / IDOR / behavioural bugs. Add `--playwright` for JS/SPA + behind-login crawling. |
 | `pr-runtime` | as above             | as above   | as above     | The GitHub Action wrapper around `attack` / `attack-ai`. Posts a PR comment. |
 | `attack` + `--pentest-scanners zap-baseline,nuclei` | $0 (binaries are local) | 5–15 min | No | Pre-release / nightly. Deeper coverage from external scanners. |
 
